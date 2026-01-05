@@ -38,7 +38,7 @@ export default function StudentChat() {
     
     // Subscribe to realtime updates
     const channel = supabase
-      .channel('chat-messages')
+      .channel('schema-db-changes')
       .on(
         'postgres_changes',
         {
@@ -46,26 +46,33 @@ export default function StudentChat() {
           schema: 'public',
           table: 'chat_messages',
         },
-        async (payload) => {
+        (payload) => {
           const newMessage = payload.new as ChatMessage;
           
-          // Fetch sender name if not cached
-          if (!profiles[newMessage.sender_id]) {
-            const { data } = await supabase
-              .from('profiles')
-              .select('full_name, email_username')
-              .eq('user_id', newMessage.sender_id)
-              .single();
-            
-            if (data) {
-              setProfiles((prev) => ({
-                ...prev,
-                [newMessage.sender_id]: data.full_name || data.email_username || 'Student',
-              }));
-            }
-          }
+          // Check if message already exists to prevent duplicates
+          setMessages((prev) => {
+            if (prev.some(m => m.id === newMessage.id)) return prev;
+            return [...prev, newMessage];
+          });
           
-          setMessages((prev) => [...prev, newMessage]);
+          // Fetch sender name if not cached (deferred)
+          if (!profiles[newMessage.sender_id]) {
+            setTimeout(() => {
+              supabase
+                .from('profiles')
+                .select('full_name, email_username')
+                .eq('user_id', newMessage.sender_id)
+                .maybeSingle()
+                .then(({ data }) => {
+                  if (data) {
+                    setProfiles((prev) => ({
+                      ...prev,
+                      [newMessage.sender_id]: data.full_name || data.email_username || 'Student',
+                    }));
+                  }
+                });
+            }, 0);
+          }
         }
       )
       .subscribe();
@@ -73,7 +80,7 @@ export default function StudentChat() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [profiles]);
 
   const fetchMessages = async () => {
     const { data: messagesData, error } = await supabase

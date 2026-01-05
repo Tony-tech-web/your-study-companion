@@ -43,18 +43,21 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          receiver_id: string | null
           sender_id: string
         }
         Insert: {
           content: string
           created_at?: string
           id?: string
+          receiver_id?: string | null
           sender_id: string
         }
         Update: {
           content?: string
           created_at?: string
           id?: string
+          receiver_id?: string | null
           sender_id?: string
         }
         Relationships: []
@@ -69,6 +72,7 @@ export type Database = {
           id: string
           matric_number: string | null
           phone_number: string | null
+          student_id: string
           updated_at: string
           user_id: string
         }
@@ -81,6 +85,7 @@ export type Database = {
           id?: string
           matric_number?: string | null
           phone_number?: string | null
+          student_id: string
           updated_at?: string
           user_id: string
         }
@@ -93,6 +98,7 @@ export type Database = {
           id?: string
           matric_number?: string | null
           phone_number?: string | null
+          student_id?: string
           updated_at?: string
           user_id?: string
         }
@@ -157,7 +163,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      generate_student_id: { Args: never; Returns: string }
+      validate_email_domain: { Args: { email: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
