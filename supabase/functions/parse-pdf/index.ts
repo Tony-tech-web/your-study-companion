@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import pdf from "npm:pdf-parse@1.1.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,19 +13,23 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "No authorization header" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { filePath, userId } = await req.json();
+    // Support both search params (user style) and JSON body (frontend style)
+    let filePath: string | null = null;
+    let userId: string | null = null;
+
+    if (req.headers.get("content-type")?.includes("application/json")) {
+      const body = await req.json();
+      filePath = body.filePath || body.path;
+      userId = body.userId || body.user_id;
+    } else {
+      const url = new URL(req.url);
+      filePath = url.searchParams.get("path");
+      userId = url.searchParams.get("user_id");
+    }
 
     if (!filePath || !userId) {
       return new Response(
@@ -32,6 +37,8 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    console.info(`Processing PDF: ${filePath} for user: ${userId}`);
 
     // Download file from storage
     const { data: fileData, error: downloadError } = await supabase.storage
@@ -41,65 +48,28 @@ serve(async (req) => {
     if (downloadError || !fileData) {
       console.error("Download error:", downloadError);
       return new Response(
-        JSON.stringify({ error: "Failed to download PDF" }),
+        JSON.stringify({ error: "Failed to download PDF", details: downloadError }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Convert to base64 for AI processing
+    // Parse PDF using pdf-parse
     const arrayBuffer = await fileData.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    
-    // Extract text using a simple approach - send to AI for extraction
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
-    }
+    // @ts-ignore: pdf-parse expects a Buffer but works with Uint8Array in Deno
+    const pdfData = await pdf(new Uint8Array(arrayBuffer));
+    const extractedText = pdfData.text || "";
 
-    // Convert PDF bytes to base64
-    const base64 = btoa(String.fromCharCode(...bytes));
+    console.info(`Successfully extracted ${extractedText.length} characters`);
 
-    // Use Gemini to extract text from PDF
-    const extractResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Extract ALL text content from this PDF document. Preserve the structure, headings, paragraphs, and any important formatting. Return only the extracted text without any commentary."
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:application/pdf;base64,${base64}`
-                }
-              }
-            ]
-          }
-        ],
-      }),
+    // Log to ai_conversations as per user requirement
+    // Note: We use the service key to bypass RLS if needed, or the client will use it
+    await supabase.from("ai_conversations").insert({
+      user_id: userId,
+      role: "assistant",
+      content: `I've successfully processed the document: ${filePath.split('/').pop()}. I am ready to help you study its content.`,
     });
 
-    if (!extractResponse.ok) {
-      const errorText = await extractResponse.text();
-      console.error("PDF extraction error:", extractResponse.status, errorText);
-      return new Response(
-        JSON.stringify({ error: "Failed to extract PDF content" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const extractData = await extractResponse.json();
-    const extractedText = extractData.choices?.[0]?.message?.content || "";
-
+    // Return the text to the frontend so the "Analyzing PDF..." state can finish
     return new Response(
       JSON.stringify({ text: extractedText }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

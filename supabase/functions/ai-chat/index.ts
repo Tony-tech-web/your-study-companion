@@ -1,14 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-const MODELS: Record<string, string> = {
-  "gemini-flash": "google/gemini-2.5-flash",
-  "gemini-pro": "google/gemini-2.5-pro",
-  "gpt-5": "openai/gpt-5",
 };
 
 serve(async (req) => {
@@ -17,119 +12,131 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, model = "gemini-flash", pdfContext, mode = "chat" } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const body = await req.json();
+    const { messages, user_id, message, pdfContext, mode = "chat" } = body;
+
+    // Support both direct 'message' (user code) and 'messages' array (frontend code)
+    const userId = user_id || body.userId;
+    const currentMessage = message || (messages && messages[messages.length - 1]?.content);
+
+    if (!userId || !currentMessage) {
+      return new Response(
+        JSON.stringify({ error: "Missing user_id or message" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Insert user message into database (User's required side effect)
+    await supabase.from("ai_conversations").insert({
+      user_id: userId,
+      role: "user",
+      content: currentMessage,
+    });
+
+    const AI_KEY = Deno.env.get("OPENAI_API_KEY") || Deno.env.get("LOVABLE_API_KEY");
+    if (!AI_KEY) {
+      throw new Error("AI Key (OPENAI_API_KEY or LOVABLE_API_KEY) is not configured");
+    }
+
+    // Prepare system prompt based on context and mode
+    let systemPrompt = `You are Elizade AI, an intelligent study assistant for university students at Elizade University.`;
     
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
-    }
-
-    const selectedModel = MODELS[model] || MODELS["gemini-flash"];
-
-    let systemPrompt = `You are Elizade AI, an intelligent study assistant for university students at Elizade University. Your role is to:
-
-1. Help students understand complex academic concepts across all subjects
-2. Provide clear, concise explanations with examples
-3. Break down difficult topics into manageable parts
-4. Offer study tips and learning strategies
-5. Help with problem-solving and critical thinking
-6. Summarize materials and create study notes
-7. Answer questions about various academic subjects
-
-Guidelines:
-- Be encouraging and supportive
-- Use simple language when explaining complex topics
-- Provide step-by-step explanations when needed
-- Include relevant examples to illustrate concepts
-- Encourage students to think critically
-- Be respectful and professional
-
-Remember: You're here to help students learn and succeed in their academic journey.`;
-
-    // Add PDF context if provided
     if (pdfContext) {
-      systemPrompt += `\n\n--- UPLOADED PDF CONTENT ---\nThe student has uploaded the following PDF document for study. Use this content to help them learn:\n\n${pdfContext}\n\n--- END OF PDF CONTENT ---`;
-      
-      if (mode === "teach") {
-        systemPrompt += `\n\nYou are now in TEACHING MODE. Your task is to:
-1. Actively teach the student about the content from their uploaded PDF
-2. Break down complex concepts into digestible parts
-3. Ask the student questions to check their understanding
-4. Provide examples and analogies to clarify difficult topics
-5. Encourage the student to ask questions
-6. Be patient and thorough in your explanations
-7. Use the Socratic method to guide learning`;
-      } else if (mode === "test") {
-        systemPrompt += `\n\nYou are now in TEST MODE. Your task is to:
-1. Generate ONE question at a time based on the PDF content
-2. Wait for the student's answer before providing feedback
-3. Evaluate their answer and explain if they got it right or wrong
-4. Provide the correct answer with explanation if they were wrong
-5. Then ask the next question
-6. Mix question types: multiple choice, short answer, true/false, fill-in-the-blank
-7. Cover different parts of the document
-8. Keep track of their score mentally and encourage them
-9. Start by asking: "Ready for your first question? Here it is:"`;
-      }
+      systemPrompt += `\n\nContext from uploaded PDF:\n${pdfContext}\n\nMode: ${mode}`;
     }
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const openaiMessages = [
+      { role: "system", content: systemPrompt },
+      ...(messages || [{ role: "user", content: currentMessage }])
+    ];
+
+    // Request from AI provider with streaming
+    const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
+        Authorization: `Bearer ${AI_KEY}`,
       },
       body: JSON.stringify({
-        model: selectedModel,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages,
-        ],
+        model: "gpt-4o-mini",
+        messages: openaiMessages,
         stream: true,
       }),
     });
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limits exceeded, please try again later." }),
-          {
-            status: 429,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Payment required, please add funds to your Lovable AI workspace." }),
-          {
-            status: 402,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
+    if (!aiRes.ok) {
+      const errorText = await aiRes.text();
+      console.error("AI Provider Error:", errorText);
       return new Response(
-        JSON.stringify({ error: "AI gateway error" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        JSON.stringify({ error: "AI provider error", details: errorText }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    return new Response(response.body, {
+    // Use a TransformStream to pass through the AI response while logging it
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+
+    let fullAssistantResponse = "";
+
+    // Process the stream as it flows through
+    (async () => {
+      const reader = aiRes.body!.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          await writer.write(value);
+
+          // Extract content from SSE chunks for our database log
+          const lines = chunk.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6).trim();
+              if (data === "[DONE]") continue;
+              try {
+                const json = JSON.parse(data);
+                const content = json.choices?.[0]?.delta?.content || "";
+                fullAssistantResponse += content;
+              } catch (e) {
+                // Ignore parse errors for partial chunks
+              }
+            }
+          }
+        }
+
+        // Once the stream is finished, log the full reply to the database
+        if (fullAssistantResponse) {
+          await supabase.from("ai_conversations").insert({
+            user_id: userId,
+            role: "assistant",
+            content: fullAssistantResponse,
+          });
+        }
+      } catch (err) {
+        console.error("Streaming error:", err);
+      } finally {
+        writer.close();
+      }
+    })();
+
+    return new Response(readable, {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
     });
+
   } catch (e) {
     console.error("ai-chat error:", e);
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

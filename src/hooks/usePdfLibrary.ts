@@ -70,9 +70,10 @@ export function usePdfLibrary() {
       toast.success('PDF uploaded successfully');
       await fetchPdfs();
       return data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading PDF:', error);
-      toast.error('Failed to upload PDF');
+      const detail = error.message || error.error_description || 'Unknown error';
+      toast.error(`Upload failed: ${detail}`);
       return null;
     } finally {
       setIsUploading(false);

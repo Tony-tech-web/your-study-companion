@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,51 +9,31 @@
    Deep Navy + Gold Accents
 */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
-
 @layer base {
   :root {
     /* Core Academic Palette */
     --background: 220 20% 97%;
     --foreground: 222 47% 11%;
-
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
-
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-
-    /* Deep Navy Primary */
     --primary: 222 47% 18%;
     --primary-foreground: 45 100% 96%;
-
-    /* Soft Gold Secondary */
     --secondary: 45 80% 92%;
     --secondary-foreground: 222 47% 18%;
-
-    /* Muted Academic Tones */
     --muted: 220 14% 90%;
     --muted-foreground: 220 10% 45%;
-
-    /* Gold Accent */
     --accent: 43 96% 56%;
     --accent-foreground: 222 47% 11%;
-
-    /* Status Colors */
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-
     --success: 142 76% 36%;
     --success-foreground: 0 0% 100%;
-
-    /* Borders & Inputs */
     --border: 220 13% 88%;
     --input: 220 13% 88%;
     --ring: 222 47% 18%;
-
     --radius: 0.75rem;
-
-    /* Sidebar - Darker Navy */
     --sidebar-background: 222 47% 11%;
     --sidebar-foreground: 220 14% 90%;
     --sidebar-primary: 43 96% 56%;
@@ -60,19 +42,13 @@
     --sidebar-accent-foreground: 220 14% 90%;
     --sidebar-border: 222 30% 20%;
     --sidebar-ring: 43 96% 56%;
-
-    /* Custom Tokens */
     --gold: 43 96% 56%;
     --navy: 222 47% 11%;
     --navy-light: 222 47% 18%;
     --cream: 45 100% 96%;
-
-    /* Gradients */
     --gradient-gold: linear-gradient(135deg, hsl(43 96% 56%), hsl(38 100% 50%));
     --gradient-navy: linear-gradient(135deg, hsl(222 47% 11%), hsl(222 47% 18%));
     --gradient-hero: linear-gradient(135deg, hsl(222 47% 11%) 0%, hsl(222 47% 18%) 50%, hsl(222 30% 25%) 100%);
-
-    /* Shadows */
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
@@ -83,32 +59,23 @@
   .dark {
     --background: 222 47% 6%;
     --foreground: 220 14% 90%;
-
     --card: 222 47% 9%;
     --card-foreground: 220 14% 90%;
-
     --popover: 222 47% 9%;
     --popover-foreground: 220 14% 90%;
-
     --primary: 43 96% 56%;
     --primary-foreground: 222 47% 11%;
-
     --secondary: 222 47% 15%;
     --secondary-foreground: 220 14% 90%;
-
     --muted: 222 30% 18%;
     --muted-foreground: 220 10% 60%;
-
     --accent: 43 96% 56%;
     --accent-foreground: 222 47% 11%;
-
     --destructive: 0 62% 50%;
     --destructive-foreground: 0 0% 100%;
-
     --border: 222 30% 20%;
     --input: 222 30% 20%;
     --ring: 43 96% 56%;
-
     --sidebar-background: 222 47% 6%;
     --sidebar-foreground: 220 14% 90%;
     --sidebar-primary: 43 96% 56%;
@@ -124,92 +91,67 @@
   * {
     @apply border-border;
   }
-
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Inter', system-ui, sans-serif;
   }
-
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Playfair Display', serif;
   }
 }
 
 @layer components {
-  /* Gold Button Variant */
   .btn-gold {
     @apply bg-accent text-accent-foreground font-semibold shadow-md;
     background: var(--gradient-gold);
     box-shadow: var(--shadow-gold);
     transition: all 0.2s ease;
   }
-
   .btn-gold:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 20px 0 hsl(43 96% 56% / 0.35);
   }
-
-  /* Navy Gradient Background */
   .bg-navy-gradient {
     background: var(--gradient-hero);
   }
-
-  /* Card with Hover Effect */
   .card-hover {
     @apply transition-all duration-300;
   }
-
   .card-hover:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-xl);
   }
-
-  /* Sidebar Animation Classes */
   .sidebar-item {
     @apply flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200;
   }
-
   .sidebar-item:hover {
     @apply bg-sidebar-accent;
   }
-
   .sidebar-item.active {
     @apply bg-sidebar-accent;
     border-left: 3px solid hsl(var(--sidebar-primary));
   }
-
-  /* Chat Message Styles */
   .chat-message-user {
     @apply bg-primary text-primary-foreground rounded-2xl rounded-br-md px-4 py-2;
   }
-
   .chat-message-assistant {
     @apply bg-muted text-foreground rounded-2xl rounded-bl-md px-4 py-2;
   }
-
-  /* Smooth Scrollbar */
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
   }
-
   .custom-scrollbar::-webkit-scrollbar-track {
     @apply bg-muted/30 rounded-full;
   }
-
   .custom-scrollbar::-webkit-scrollbar-thumb {
     @apply bg-muted-foreground/30 rounded-full;
   }
-
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     @apply bg-muted-foreground/50;
   }
-
-  /* Glass Effect */
   .glass {
     @apply bg-card/80 backdrop-blur-xl border border-border/50;
   }
-
-  /* Enhanced Glass Card */
   .glass-card {
     @apply bg-card/80 backdrop-blur-xl border border-border/50 shadow-lg;
     background: linear-gradient(
@@ -218,7 +160,6 @@
       hsl(var(--card) / 0.7) 100%
     );
   }
-
   .dark .glass-card {
     background: linear-gradient(
       135deg,
@@ -228,82 +169,61 @@
     border-color: hsl(var(--border) / 0.3);
     box-shadow: 0 8px 32px hsl(0 0% 0% / 0.3), inset 0 1px 0 hsl(var(--accent) / 0.1);
   }
-
-  /* Hover Lift Effect */
   .hover-lift {
     @apply transition-all duration-300;
   }
-
   .hover-lift:hover {
     transform: translateY(-4px);
     box-shadow: 0 12px 40px hsl(var(--accent) / 0.15), 0 4px 12px hsl(0 0% 0% / 0.1);
   }
-
-  /* Smooth Button Click */
   .btn-smooth {
     @apply transition-all duration-200;
   }
-
   .btn-smooth:active {
     transform: scale(0.97);
   }
-
-  /* PDF Tab Style */
   .pdf-tab {
     @apply px-4 py-2 bg-muted rounded-t-lg border-b-2 border-transparent transition-all;
   }
-
   .pdf-tab.active {
     @apply bg-card border-accent;
   }
-
-  /* Input Focus Animation */
   .input-focus-ring {
     @apply focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all;
   }
 }
 
 @layer utilities {
-  /* Text Gradient */
   .text-gradient-gold {
     background: var(--gradient-gold);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
-
-  /* Animation Utilities */
   .animate-fade-in {
     animation: fadeIn 0.3s ease-out;
   }
-
   .animate-slide-in-left {
     animation: slideInLeft 0.3s ease-out;
   }
-
   .animate-slide-in-right {
     animation: slideInRight 0.3s ease-out;
   }
-
   .animate-scale-in {
     animation: scaleIn 0.2s ease-out;
   }
-
   @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
   }
-
   @keyframes slideInLeft {
     from { transform: translateX(-20px); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
   }
-
   @keyframes slideInRight {
     from { transform: translateX(20px); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
   }
-
   @keyframes scaleIn {
     from { transform: scale(0.95); opacity: 0; }
     to { transform: scale(1); opacity: 1; }

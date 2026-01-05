@@ -55,15 +55,6 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
 
   return (
     <>
-      {/* Mobile Menu Button */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="fixed top-4 left-4 z-50 lg:hidden bg-card shadow-md"
-        onClick={onToggle}
-      >
-        {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-      </Button>
 
       {/* Overlay */}
       <AnimatePresence>
@@ -83,7 +74,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
         initial={false}
         animate={isOpen ? 'open' : 'closed'}
         variants={sidebarVariants}
-        className="fixed left-0 top-0 h-full w-72 bg-sidebar z-50 lg:translate-x-0 lg:static shadow-xl"
+        className="fixed left-0 top-0 h-screen w-72 bg-sidebar z-50 shadow-xl overflow-hidden"
       >
         <div className="flex flex-col h-full">
           {/* Logo */}

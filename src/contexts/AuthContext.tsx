@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
@@ -13,6 +13,7 @@ interface AuthContextType {
     phone_number: string;
   }) => Promise<{ error: Error | null }>;
   signIn: (identifier: string, password: string) => Promise<{ error: Error | null }>;
+  signInWithGoogle: () => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -22,39 +23,116 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+  const initializationStarted = useRef(false);
 
   useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+    if (initializationStarted.current) return;
+    initializationStarted.current = true;
+
+    let mounted = true;
+    
+    // Detect if we are currently handling an OAuth redirect
+    // We check both the hash and search params
+    const hash = window.location.hash;
+    const search = window.location.search;
+    const isHandlingRedirect = 
+      hash.includes('access_token') || 
+      hash.includes('refresh_token') || 
+      search.includes('code=') ||
+      search.includes('type=recovery') ||
+      search.includes('type=signup');
+
+    if (isHandlingRedirect) {
+      console.info("%c[Auth] Redirect detected, holding loading state...", "color: #fbbf24; font-weight: bold;");
+    }
+
+    // Safety timeout: if we are stuck "loading" during a redirect for more than 7 seconds, force stop.
+    const timeoutId = isHandlingRedirect ? setTimeout(() => {
+      if (mounted && loading) {
+        console.warn("[Auth] Redirect processing timed out. Stopping loader.");
         setLoading(false);
+      }
+    }, 7000) : null;
+
+    async function initializeAuth() {
+      try {
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error("[Auth] getSession error:", error);
+        }
+
+        if (mounted) {
+          if (initialSession) {
+            console.info("%c[Auth] Initial session stable:", "color: #10b981;", initialSession.user.email);
+            setSession(initialSession);
+            setUser(initialSession.user);
+            setLoading(false);
+          } else if (!isHandlingRedirect) {
+            console.info("[Auth] No session and no redirect. Ready.");
+            setLoading(false);
+          } else {
+            console.info("[Auth] No initial session, but redirect is in progress. Waiting for listener...");
+          }
+        }
+      } catch (err) {
+        console.error("[Auth] Critical init error:", err);
+        if (mounted) setLoading(false);
+      }
+    }
+
+    initializeAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, currentSession) => {
+        if (!mounted) return;
+
+        console.info(`%c[Auth] State Change: ${event}`, "color: #3b82f6; font-weight: bold;", currentSession?.user?.email || "No User");
+
+        // Update state
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+
+        // Logic for when to stop loading
+        if (event === 'SIGNED_IN') {
+          setLoading(false);
+          if (window.location.pathname.includes('/auth')) {
+            console.info("[Auth] Navigation: Moving to dashboard.");
+            navigate('/dashboard', { replace: true });
+          }
+        } else if (event === 'SIGNED_OUT') {
+          // If we are NOT in a redirect, SIGNED_OUT means we're done checking.
+          if (!isHandlingRedirect) {
+            setLoading(false);
+          }
+        } else if (event === 'INITIAL_SESSION') {
+          // If no session found on initial load, only stop loading if no redirect is pending.
+          if (!currentSession && !isHandlingRedirect) {
+            setLoading(false);
+          }
+        } else if (event === 'USER_UPDATED') {
+          setLoading(false);
+        }
       }
     );
 
-    // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      mounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
+      subscription.unsubscribe();
+    };
+  }, [navigate]);
 
   const signUp = async (
     email: string, 
     password: string, 
     metadata: { full_name: string; matric_number: string; phone_number: string }
   ) => {
-    const redirectUrl = `${window.location.origin}/dashboard`;
-    
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: redirectUrl,
         data: {
           full_name: metadata.full_name,
           matric_number: metadata.matric_number,
@@ -63,15 +141,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     });
     
+    if (data.user) {
+      setUser(data.user);
+      setSession(data.session);
+    }
+    
     return { error: error as Error | null };
   };
 
   const signIn = async (identifier: string, password: string) => {
-    // Check if identifier is an email or username/matric number
     let email = identifier;
     
     if (!identifier.includes('@')) {
-      // It's a username or matric number, we need to find the email
       const { data: profiles, error: profileError } = await supabase
         .from('profiles')
         .select('email')
@@ -85,20 +166,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email = profiles[0].email;
     }
     
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     
+    if (data.user) {
+      setUser(data.user);
+      setSession(data.session);
+    }
+    
+    return { error: error as Error | null };
+  };
+
+  const signInWithGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
     return { error: error as Error | null };
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    navigate('/auth');
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signInWithGoogle, signOut }}>
       {children}
     </AuthContext.Provider>
   );
