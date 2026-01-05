@@ -22,6 +22,8 @@ interface Profile {
   email: string;
   matric_number: string | null;
   phone_number: string | null;
+  student_id: string;
+  email_username: string;
 }
 
 export default function Profile() {
@@ -188,6 +190,14 @@ export default function Profile() {
           </CardHeader>
           <CardContent className="grid gap-6 md:grid-cols-2">
             <div className="space-y-4">
+              <div className="flex items-center gap-3 p-4 bg-accent/10 rounded-lg border border-accent/20">
+                <Hash className="h-5 w-5 text-accent" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Student ID</p>
+                  <p className="font-bold text-accent">{profile?.student_id}</p>
+                </div>
+              </div>
+
               <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
                 <User className="h-5 w-5 text-muted-foreground" />
                 <div>
@@ -206,6 +216,14 @@ export default function Profile() {
             </div>
 
             <div className="space-y-4">
+              <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
+                <User className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Email Username</p>
+                  <p className="font-medium">{profile?.email_username}</p>
+                </div>
+              </div>
+
               <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
                 <Hash className="h-5 w-5 text-muted-foreground" />
                 <div>

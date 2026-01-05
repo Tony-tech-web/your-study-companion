@@ -17,8 +17,20 @@ const loginSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
+// Allowed email domains for Elizade University
+const ALLOWED_DOMAINS = ['elizade.edu.ng', 'student.elizade.edu.ng'];
+
+const validateEmailDomain = (email: string) => {
+  const domain = email.split('@')[1]?.toLowerCase();
+  return ALLOWED_DOMAINS.includes(domain);
+};
+
 const signupSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string()
+    .email('Invalid email address')
+    .refine(validateEmailDomain, {
+      message: 'Please use your Elizade University email (@elizade.edu.ng)',
+    }),
   fullName: z.string().min(2, 'Full name is required'),
   matricNumber: z.string().min(1, 'Matriculation number is required'),
   phoneNumber: z.string().min(10, 'Valid phone number is required'),
