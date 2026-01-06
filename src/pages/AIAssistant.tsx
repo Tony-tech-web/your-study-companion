@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Bot, 
@@ -28,6 +29,7 @@ import {
   DropdownMenuLabel
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { PdfUploader } from '@/components/ai/PdfUploader';
 import { PdfLibrary } from '@/components/ai/PdfLibrary';
@@ -46,11 +48,24 @@ const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
 
 export default function AIAssistant() {
   const { user } = useAuth();
+  const location = useLocation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>('google');
   const [activeTab, setActiveTab] = useState<'learn' | 'test' | 'library'>('learn');
+
+  // Persist general chat history
+  const [generalMessages, setGeneralMessages] = useState<Message[]>([]);
+
+  useEffect(() => {
+      const state = location.state as { initialMessages?: Message[] } | null;
+      if (state?.initialMessages) {
+          setMessages(state.initialMessages);
+          // Optional: Clear state so refresh doesn't reload it?
+          // window.history.replaceState({}, ''); 
+      }
+  }, [location.state]);
 
   const getModelIcon = (id: string) => {
     switch(id) {
@@ -74,6 +89,7 @@ export default function AIAssistant() {
   const [pdfContext, setPdfContext] = useState<string | null>(null);
   const [isExtractingPdf, setIsExtractingPdf] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { pdfs, isLoading: pdfsLoading, isUploading, uploadPdf, deletePdf, extractPdfContent, refreshPdfs } = usePdfLibrary();
 
@@ -86,6 +102,11 @@ export default function AIAssistant() {
   }, [messages]);
 
   const handlePdfSelect = async (pdf: PdfFile, mode: 'teach' | 'test') => {
+    // Save general chat history if we are currently in general mode
+    if (!selectedPdf) {
+        setGeneralMessages(messages);
+    }
+    
     setIsExtractingPdf(true);
     setSelectedPdf(pdf);
     setStudyMode(mode);
@@ -124,10 +145,24 @@ export default function AIAssistant() {
 
   const clearSession = () => {
     setMessages([]);
+    // Only clear general messages if we are in general chat
+    if (!selectedPdf) {
+        setGeneralMessages([]);
+    }
     setSelectedPdf(null);
     setPdfContext(null);
     setStudyMode('chat');
     toast.success('Session cleared');
+  };
+
+  const switchToGeneralChat = () => {
+      if (!selectedPdf) return; // Already in general chat
+      
+      setSelectedPdf(null);
+      setPdfContext(null);
+      setStudyMode('chat');
+      setMessages(generalMessages);
+      setActiveTab('learn');
   };
 
   const sendMessage = async (contextOverride?: string, modeOverride?: StudyMode, inputOverride?: string) => {
@@ -228,6 +263,17 @@ export default function AIAssistant() {
           }
         }
       }
+
+      // Save complete assistant response to database
+      if (assistantContent && user?.id) {
+          const contentWithModel = `{{model:${selectedModel}}}${assistantContent}`;
+          await supabase.from('ai_conversations').insert({
+              user_id: user.id,
+              role: 'assistant',
+              content: contentWithModel
+          });
+      }
+
     } catch (error) {
       console.error('AI chat error:', error);
       toast.error('Failed to get AI response. Please try again.');
@@ -351,10 +397,8 @@ export default function AIAssistant() {
 
               <CardContent className="flex-1 overflow-auto p-3">
                 <TabsContent value="learn" className="mt-0 h-full">
-                  <div className="space-y-4">
-                    <PdfUploader onUpload={handlePdfUpload} isUploading={isUploading} />
-                    
-                    <div className="pt-4 border-t border-white/10">
+                  <div className="space-y-4 h-full flex flex-col">
+                    <div className="flex-1 overflow-y-auto pr-1">
                         <div className="flex items-center justify-between mb-2 px-1">
                             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
                                 Your Documents
@@ -368,43 +412,116 @@ export default function AIAssistant() {
                                 variant={!selectedPdf ? "secondary" : "ghost"}
                                 size="sm"
                                 className={`justify-start w-full ${!selectedPdf ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'}`}
-                                onClick={() => {
-                                    clearSession();
-                                    setActiveTab('learn');
-                                }}
+                                onClick={switchToGeneralChat}
                              >
                                 <Bot className="h-4 w-4 mr-2" />
                                 General Chat
                              </Button>
 
                              {pdfs.map((pdf) => (
-                                <Button
-                                    key={pdf.id}
-                                    variant={selectedPdf?.id === pdf.id ? "secondary" : "ghost"}
-                                    size="sm"
-                                    className={`justify-start w-full group ${selectedPdf?.id === pdf.id ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'}`}
-                                    onClick={() => handlePdfSelect(pdf, 'teach')}
-                                >
-                                    <BookOpen className="h-3 w-3 mr-2" />
-                                    <span className="truncate">{pdf.file_name}</span>
-                                    {selectedPdf?.id === pdf.id && (
-                                        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-                                    )}
-                                </Button>
+                                <div key={pdf.id} className="group flex items-center gap-1 w-full">
+                                    <Button
+                                        variant={selectedPdf?.id === pdf.id ? "secondary" : "ghost"}
+                                        size="sm"
+                                        className={`flex-1 justify-start truncate ${selectedPdf?.id === pdf.id ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'}`}
+                                        onClick={() => handlePdfSelect(pdf, 'teach')}
+                                    >
+                                        <BookOpen className="h-3 w-3 mr-2 flex-shrink-0" />
+                                        <span className="truncate">{pdf.file_name}</span>
+                                        {selectedPdf?.id === pdf.id && (
+                                            <div className="ml-2 w-1.5 h-1.5 rounded-full bg-accent animate-pulse flex-shrink-0" />
+                                        )}
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (confirm('Are you sure you want to delete this PDF?')) {
+                                                deletePdf(pdf);
+                                            }
+                                        }}
+                                    >
+                                        <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                </div>
                              ))}
                         </div>
+                    </div>
+                    
+                    <div className="pt-2">
+                        <input
+                            type="file"
+                            accept=".pdf"
+                            className="hidden"
+                            ref={fileInputRef}
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handlePdfUpload(file);
+                            }}
+                        />
+                        <Button 
+                            variant="outline" 
+                            className="w-full glass-card border-dashed border-2 hover:bg-accent/5 hover:border-accent/50"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploading}
+                        >
+                            {isUploading ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                                <Upload className="h-4 w-4 mr-2" />
+                            )}
+                            {isUploading ? 'Uploading...' : 'Upload New PDF'}
+                        </Button>
                     </div>
                   </div>
                 </TabsContent>
 
                 <TabsContent value="test" className="mt-0 h-full">
                   <div className="space-y-4">
+                    {selectedPdf && (
+                        <div className="flex flex-col gap-3 animate-fade-in">
+                            <div className="p-3 bg-accent/10 rounded-xl border border-accent/20">
+                                <h4 className="font-semibold text-sm mb-1 text-accent flex items-center gap-2">
+                                    <BookOpen className="h-4 w-4" />
+                                    Active Document
+                                </h4>
+                                <p className="text-xs text-muted-foreground truncate mb-3 font-mono opacity-80">
+                                    {selectedPdf.file_name}
+                                </p>
+                                <Button 
+                                    className="w-full btn-gold gap-2 shadow-lg hover:shadow-xl transition-all" 
+                                    onClick={() => handlePdfSelect(selectedPdf, 'test')}
+                                >
+                                    <ClipboardCheck className="h-4 w-4" />
+                                    Start Test Session
+                                </Button>
+                            </div>
+                            <div className="relative py-2">
+                                <div className="absolute inset-0 flex items-center">
+                                    <span className="w-full border-t border-border/50" />
+                                </div>
+                                <div className="relative flex justify-center text-[10px] uppercase tracking-widest font-semibold">
+                                    <span className="bg-background px-2 text-muted-foreground">Or Upload New</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <PdfUploader onUpload={async (file) => {
                       const uploaded = await uploadPdf(file);
                       if (uploaded) handlePdfSelect(uploaded, 'test');
                     }} isUploading={isUploading} />
-                    <div className="text-center text-sm text-muted-foreground">
-                      <p>Upload a PDF and I'll quiz you with questions from the content.</p>
+                    
+                    <div className="text-center text-sm text-muted-foreground px-4">
+                      <p>
+                          Upload a PDF or select one from the{' '}
+                          <button onClick={() => setActiveTab('learn')} className="text-accent hover:underline font-medium">
+                              Library
+                          </button>
+                          {' '}to start a quiz.
+                      </p>
                     </div>
                   </div>
                 </TabsContent>

@@ -71,6 +71,7 @@ export default function Dashboard() {
     aiInteractions: 0,
   });
   const [studyStreak, setStudyStreak] = useState(0);
+  const [activities, setActivities] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -87,6 +88,16 @@ export default function Dashboard() {
         .from('student_pdfs')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
+
+      // Fetch Recent Activity
+      const { data: recent } = await supabase
+        .from('ai_conversations')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+        
+      setActivities(recent || []);
 
       setStats({
         hoursStudied: Math.floor((aiCount || 0) / 10),
@@ -264,21 +275,68 @@ export default function Dashboard() {
       <Card className="glass-card">
         <CardContent className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-xl font-semibold">Recent Activity</h2>
-            <button className="text-sm text-muted-foreground hover:text-accent transition-colors">
-              Refresh
-            </button>
+            <h2 className="font-display text-xl font-semibold flex items-center gap-2">
+                 Recent Activity
+                 <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                    Latest 5
+                 </span>
+            </h2>
+            <Link to="/dashboard/history" className="text-sm text-muted-foreground hover:text-accent transition-colors flex items-center gap-1">
+              View History <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
           
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
-              <MessageCircle className="h-8 w-8 text-muted-foreground/50" />
+          {activities.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+                <MessageCircle className="h-8 w-8 text-muted-foreground/50" />
+                </div>
+                <p className="text-muted-foreground font-medium">No recent activity found.</p>
+                <p className="text-sm text-muted-foreground/70">
+                Your recent interactions will appear here.
+                </p>
             </div>
-            <p className="text-muted-foreground font-medium">No recent activity found.</p>
-            <p className="text-sm text-muted-foreground/70">
-              Your recent interactions will appear here.
-            </p>
-          </div>
+          ) : (
+            <div className="space-y-4">
+                {activities.map((activity, i) => {
+                    const isUser = activity.role === 'user';
+                    // Simple model stripper
+                    const cleanContent = activity.content.replace(/^{{model:[^}]+}}/, '');
+                    
+                    return (
+                        <Link key={activity.id} to="/dashboard/history">
+                            <motion.div 
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: i * 0.1 }}
+                                className="group flex items-start gap-3 p-3 rounded-xl hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50"
+                            >
+                                <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center border ${
+                                    isUser 
+                                        ? 'bg-primary/10 border-primary/20 text-primary' 
+                                        : 'bg-accent/10 border-accent/20 text-accent'
+                                }`}>
+                                    {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <p className="text-sm font-medium leading-none">
+                                            {isUser ? 'You' : 'AI Assistant'}
+                                        </p>
+                                        <span className="text-xs text-muted-foreground">
+                                            {new Date(activity.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-muted-foreground line-clamp-1 group-hover:text-foreground transition-colors">
+                                        {cleanContent}
+                                    </p>
+                                </div>
+                            </motion.div>
+                        </Link>
+                    )
+                })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
