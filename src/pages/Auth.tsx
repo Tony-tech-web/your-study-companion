@@ -399,7 +399,7 @@ export default function Auth() {
         </Card>
 
         <p className="text-center mt-6 text-cream/40 text-sm">
-          © 2024 Elizade University. All rights reserved.
+          © 2026 Alidu Anthony. All rights reserved.
         </p>
       </motion.div>
     </div>

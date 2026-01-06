@@ -1,15 +1,37 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, Send, Loader2, Sparkles, Trash2, BookOpen, ClipboardCheck, Library, Upload, X } from 'lucide-react';
+import { 
+  Bot, 
+  Send, 
+  Loader2, 
+  Sparkles, 
+  Trash2, 
+  BookOpen, 
+  ClipboardCheck, 
+  Library, 
+  Upload, 
+  X,
+  Zap,
+  Brain,
+  ChevronDown
+} from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel
+} from "@/components/ui/dropdown-menu"
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { ModelSelector, AIModel } from '@/components/ai/ModelSelector';
 import { PdfUploader } from '@/components/ai/PdfUploader';
 import { PdfLibrary } from '@/components/ai/PdfLibrary';
+import { QuickActionsGrid } from '@/components/ai/QuickActionsGrid';
 import { usePdfLibrary, PdfFile } from '@/hooks/usePdfLibrary';
 
 interface Message {
@@ -27,8 +49,26 @@ export default function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<AIModel>('gemini-flash');
+  const [selectedModel, setSelectedModel] = useState<string>('google');
   const [activeTab, setActiveTab] = useState<'learn' | 'test' | 'library'>('learn');
+
+  const getModelIcon = (id: string) => {
+    switch(id) {
+        case 'google': return <Zap className="h-4 w-4 text-yellow-400" />;
+        case 'google-pro': return <Brain className="h-4 w-4 text-purple-400" />;
+        case 'openrouter': return <Sparkles className="h-4 w-4 text-blue-400" />;
+        default: return <Bot className="h-4 w-4" />;
+    }
+  };
+
+  const getModelName = (id: string) => {
+      switch(id) {
+          case 'google': return "Gemini Flash";
+          case 'google-pro': return "Gemini Pro";
+          case 'openrouter': return "GPT-5 (Preview)";
+          default: return "AI Assistant";
+      }
+  };
   const [studyMode, setStudyMode] = useState<StudyMode>('chat');
   const [selectedPdf, setSelectedPdf] = useState<PdfFile | null>(null);
   const [pdfContext, setPdfContext] = useState<string | null>(null);
@@ -78,6 +118,7 @@ export default function AIAssistant() {
     if (uploaded) {
       // Auto-select for learning
       handlePdfSelect(uploaded, 'teach');
+      setActiveTab('learn');
     }
   };
 
@@ -117,9 +158,10 @@ export default function AIAssistant() {
             role: m.role,
             content: m.content,
           })),
-          model: selectedModel,
+          providerId: selectedModel,
           pdfContext: contextOverride || pdfContext,
           mode: modeOverride || studyMode,
+          userId: user?.id,
         }),
       });
 
@@ -213,7 +255,53 @@ export default function AIAssistant() {
           <p className="text-muted-foreground">Upload PDFs, learn with AI, and test your knowledge</p>
         </div>
         <div className="flex items-center gap-3">
-          <ModelSelector value={selectedModel} onChange={setSelectedModel} disabled={isLoading} />
+             <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="glass-card gap-2 min-w-[160px] justify-between">
+                        <div className="flex items-center gap-2">
+                            {getModelIcon(selectedModel)}
+                            <span>{getModelName(selectedModel)}</span>
+                        </div>
+                        <ChevronDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-[220px] glass-card">
+                    <DropdownMenuLabel>Select Model</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    
+                    <DropdownMenuItem onClick={() => setSelectedModel('google')} className="gap-2 cursor-pointer">
+                        <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2 font-medium">
+                                <Zap className="h-4 w-4 text-yellow-400" />
+                                Gemini Flash
+                            </div>
+                            <span className="text-xs text-muted-foreground">Fast & efficient</span>
+                        </div>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem onClick={() => setSelectedModel('google-pro')} className="gap-2 cursor-pointer">
+                        <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2 font-medium">
+                                <Brain className="h-4 w-4 text-purple-400" />
+                                Gemini Pro
+                            </div>
+                            <span className="text-xs text-muted-foreground">Advanced reasoning</span>
+                        </div>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem onClick={() => setSelectedModel('openrouter')} className="gap-2 cursor-pointer">
+                        <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2 font-medium">
+                                <Sparkles className="h-4 w-4 text-blue-400" />
+                                GPT-5
+                            </div>
+                            <span className="text-xs text-muted-foreground">Most powerful</span>
+                        </div>
+                    </DropdownMenuItem>
+
+                </DropdownMenuContent>
+             </DropdownMenu>
+
           {(messages.length > 0 || selectedPdf) && (
             <Button variant="outline" size="sm" onClick={clearSession} className="glass-card btn-smooth">
               <Trash2 className="h-4 w-4 mr-2" />
@@ -223,58 +311,88 @@ export default function AIAssistant() {
         </div>
       </div>
 
-      {/* Active PDF Badge */}
-      {selectedPdf && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-4"
-        >
-          <div className="glass-card inline-flex items-center gap-2 px-4 py-2 rounded-full">
-            <BookOpen className="h-4 w-4 text-accent" />
-            <span className="text-sm font-medium">{selectedPdf.file_name}</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent">
-              {studyMode === 'teach' ? 'Learning Mode' : 'Test Mode'}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 hover:bg-destructive/20"
-              onClick={clearSession}
-            >
-              <X className="h-3 w-3" />
-            </Button>
-          </div>
-        </motion.div>
-      )}
+
 
       {/* Main Content */}
       <div className="flex-1 flex gap-4 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-80 flex-shrink-0">
-          <Card className="glass-card h-full overflow-hidden">
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="h-full flex flex-col">
-              <TabsList className="grid w-full grid-cols-3 m-2 mr-4">
-                <TabsTrigger value="learn" className="flex items-center gap-1">
-                  <BookOpen className="h-4 w-4" />
-                  Learn
-                </TabsTrigger>
-                <TabsTrigger value="test" className="flex items-center gap-1">
-                  <ClipboardCheck className="h-4 w-4" />
-                  Test
-                </TabsTrigger>
-                <TabsTrigger value="library" className="flex items-center gap-1">
-                  <Library className="h-4 w-4" />
-                  Library
-                </TabsTrigger>
-              </TabsList>
+        {/* Sidebar */}
+        <div className="w-80 flex-shrink-0 flex flex-col gap-4">
+          {/* Box 1: Library Navigation */}
+          <Card className={`glass-card p-2 ${activeTab === 'library' ? 'border-accent/50 bg-accent/5' : ''}`}>
+             <Button
+                variant={activeTab === 'library' ? 'default' : 'ghost'}
+                onClick={() => setActiveTab('library')}
+                className={`w-full justify-start h-12 text-base font-medium ${activeTab === 'library' ? 'bg-accent text-white' : ''}`}
+             >
+                <Library className="mr-3 h-5 w-5" />
+                Full Library
+             </Button>
+          </Card>
+
+          {/* Box 2: Study Modes */}
+          <Card className="glass-card flex-1 overflow-hidden flex flex-col">
+            <Tabs value={activeTab === 'library' ? '' : activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="h-full flex flex-col">
+              <div className="p-3 pb-0">
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3 pl-1">
+                      Study Modes
+                  </h3>
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="learn" className="flex items-center gap-2">
+                      <BookOpen className="h-4 w-4" />
+                      Learn
+                    </TabsTrigger>
+                    <TabsTrigger value="test" className="flex items-center gap-2">
+                      <ClipboardCheck className="h-4 w-4" />
+                      Test
+                    </TabsTrigger>
+                  </TabsList>
+              </div>
 
               <CardContent className="flex-1 overflow-auto p-3">
                 <TabsContent value="learn" className="mt-0 h-full">
                   <div className="space-y-4">
                     <PdfUploader onUpload={handlePdfUpload} isUploading={isUploading} />
-                    <div className="text-center text-sm text-muted-foreground">
-                      <p>Upload a PDF and I'll help you learn the content through interactive teaching.</p>
+                    
+                    <div className="pt-4 border-t border-white/10">
+                        <div className="flex items-center justify-between mb-2 px-1">
+                            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+                                Your Documents
+                            </h4>
+                            <span className="text-[10px] text-muted-foreground bg-accent/10 px-2 py-0.5 rounded-full">
+                                {pdfs.length}
+                            </span>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                             <Button
+                                variant={!selectedPdf ? "secondary" : "ghost"}
+                                size="sm"
+                                className={`justify-start w-full ${!selectedPdf ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'}`}
+                                onClick={() => {
+                                    clearSession();
+                                    setActiveTab('learn');
+                                }}
+                             >
+                                <Bot className="h-4 w-4 mr-2" />
+                                General Chat
+                             </Button>
+
+                             {pdfs.map((pdf) => (
+                                <Button
+                                    key={pdf.id}
+                                    variant={selectedPdf?.id === pdf.id ? "secondary" : "ghost"}
+                                    size="sm"
+                                    className={`justify-start w-full group ${selectedPdf?.id === pdf.id ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'}`}
+                                    onClick={() => handlePdfSelect(pdf, 'teach')}
+                                >
+                                    <BookOpen className="h-3 w-3 mr-2" />
+                                    <span className="truncate">{pdf.file_name}</span>
+                                    {selectedPdf?.id === pdf.id && (
+                                        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                                    )}
+                                </Button>
+                             ))}
+                        </div>
                     </div>
                   </div>
                 </TabsContent>
@@ -290,30 +408,40 @@ export default function AIAssistant() {
                     </div>
                   </div>
                 </TabsContent>
-
-                <TabsContent value="library" className="mt-0 h-full">
-                  <PdfLibrary
-                    pdfs={pdfs}
-                    isLoading={pdfsLoading}
-                    onSelect={handlePdfSelect}
-                    onDelete={deletePdf}
-                    selectedPdfId={selectedPdf?.id}
-                  />
-                </TabsContent>
               </CardContent>
             </Tabs>
           </Card>
         </div>
 
-        {/* Chat Area */}
-        <Card className="flex-1 flex flex-col overflow-hidden glass-card">
+        {/* Main Content Area */}
+        {activeTab === 'library' ? (
+          <Card className="flex-1 flex flex-col overflow-hidden glass-card">
+            <QuickActionsGrid
+              pdfs={pdfs}
+              onClearSession={() => {
+                clearSession();
+                setActiveTab('learn');
+              }}
+              onUpload={handlePdfUpload}
+              onSelectPdf={(pdf) => {
+                handlePdfSelect(pdf, 'teach');
+                setActiveTab('learn');
+              }}
+              onDeletePdf={deletePdf}
+              onRefresh={refreshPdfs}
+              isRefreshing={pdfsLoading}
+              showStartChat={false}
+            />
+          </Card>
+        ) : (
+          <Card className="flex-1 flex flex-col overflow-hidden glass-card">
           <CardContent className="flex-1 overflow-y-auto p-4 custom-scrollbar">
             {isExtractingPdf ? (
               <div className="h-full flex items-center justify-center">
                 <div className="text-center">
                   <Loader2 className="h-12 w-12 animate-spin text-accent mx-auto mb-4" />
-                  <h3 className="font-display text-xl font-semibold">Analyzing PDF...</h3>
-                  <p className="text-muted-foreground">Extracting content from your document</p>
+                  <h3 className="font-display text-xl font-semibold">Scanning Document...</h3>
+                  <p className="text-muted-foreground">Reading and scanning PDF content...</p>
                 </div>
               </div>
             ) : messages.length === 0 ? (
@@ -323,34 +451,11 @@ export default function AIAssistant() {
                     <Bot className="h-10 w-10 text-accent" />
                   </div>
                   <h2 className="font-display text-2xl font-semibold mb-2">
-                    Ready to Help You Learn!
+                    Ready for a new session
                   </h2>
                   <p className="text-muted-foreground mb-6">
-                    Upload a PDF to start learning, or ask me anything about your studies.
+                    Ask me anything or go to the <b>Library</b> tab to select a PDF.
                   </p>
-                  <div className="grid gap-2">
-                    <Button
-                      variant="outline"
-                      className="justify-start glass-card btn-smooth"
-                      onClick={() => setInput('Explain the concept of photosynthesis in simple terms')}
-                    >
-                      💡 Explain photosynthesis simply
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start glass-card btn-smooth"
-                      onClick={() => setInput('Help me understand calculus derivatives')}
-                    >
-                      📐 Explain calculus derivatives
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start glass-card btn-smooth"
-                      onClick={() => setInput('Create a study plan for my upcoming exams')}
-                    >
-                      📚 Create a study plan
-                    </Button>
-                  </div>
                 </div>
               </div>
             ) : (
@@ -426,6 +531,7 @@ export default function AIAssistant() {
             </p>
           </div>
         </Card>
+      )}
       </div>
     </div>
   );

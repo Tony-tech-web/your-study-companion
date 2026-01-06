@@ -1,55 +1,59 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Zap, RefreshCw, CheckCircle, AlertCircle, Info } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 interface APIService {
   name: string;
   status: 'active' | 'inactive' | 'error';
   purpose: string;
+  credits?: string;
   limit?: string;
   rateLimit?: string;
 }
 
 export default function APIStatus() {
   const [isRefreshing, setIsRefreshing] = useState(false);
-  
-  const [services] = useState<APIService[]>([
-    {
-      name: 'Lovable AI Gateway',
-      status: 'active',
-      purpose: 'Primary AI for chat and analysis',
-      limit: 'Usage-based pricing',
-    },
-    {
-      name: 'Google Gemini 2.5 Flash',
-      status: 'active',
-      purpose: 'Fast AI responses',
-      rateLimit: 'Rate limited per minute',
-    },
-    {
-      name: 'Google Gemini 2.5 Pro',
-      status: 'active',
-      purpose: 'Advanced reasoning and analysis',
-      rateLimit: 'Rate limited per minute',
-    },
-    {
-      name: 'OpenAI GPT-5',
-      status: 'active',
-      purpose: 'Powerful general-purpose AI',
-      rateLimit: 'Rate limited per minute',
-    },
-  ]);
+  const [services, setServices] = useState<APIService[]>([]);
 
-  const handleRefresh = async () => {
+  const fetchStatus = async () => {
     setIsRefreshing(true);
-    // Simulate refresh
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setIsRefreshing(false);
-    toast.success('API status refreshed');
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-chat', {
+        body: { mode: 'status' }
+      });
+
+      if (error) throw error;
+
+      if (data && data.services) {
+        const mappedServices: APIService[] = data.services.map((s: any) => ({
+          name: s.name,
+          status: s.status,
+          purpose: s.purpose,
+          credits: s.credits,
+          limit: s.id === 'serper' ? '2,500 requests/month' : undefined,
+          rateLimit: s.id === 'openrouter' ? '-1 requests per 10s' : undefined
+        }));
+        setServices(mappedServices);
+        toast.success('API status updated');
+      }
+    } catch (error: any) {
+      console.error('Error fetching API status:', error);
+      const msg = error.message || error.error_description || 'Unknown error';
+      toast.error(`Failed to fetch API status: ${msg}`);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
+
+  useEffect(() => {
+    fetchStatus();
+  }, []);
+  
+  const handleRefresh = fetchStatus;
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -115,6 +119,11 @@ export default function APIStatus() {
                     <p className="text-sm text-muted-foreground mt-1">
                       Purpose: {service.purpose}
                     </p>
+                    {service.credits && (
+                      <p className="text-sm text-muted-foreground font-medium text-accent">
+                        Credits: {service.credits}
+                      </p>
+                    )}
                     {service.limit && (
                       <p className="text-sm text-muted-foreground">
                         Limit: {service.limit}
@@ -125,9 +134,6 @@ export default function APIStatus() {
                         Rate Limit: {service.rateLimit}
                       </p>
                     )}
-                    <p className="text-sm text-muted-foreground">
-                      Status: {service.status.charAt(0).toUpperCase() + service.status.slice(1)}
-                    </p>
                   </div>
                 </div>
                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(service.status)}`}>

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import pdf from "npm:pdf-parse";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,7 +37,7 @@ serve(async (req) => {
       );
     }
 
-    console.info(`Processing PDF: ${filePath} for user: ${userId}`);
+    console.info(`Processing PDF with OpenAI: ${filePath} for user: ${userId}`);
 
     // Download file from storage
     const { data: fileData, error: downloadError } = await supabase.storage
@@ -51,62 +52,72 @@ serve(async (req) => {
       );
     }
 
-    // Convert PDF to base64 and use AI to extract text
+    // Extract text using pdf-parse
     const arrayBuffer = await fileData.arrayBuffer();
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const buffer = Buffer.from(arrayBuffer);
+    
+    let rawText = "";
+    try {
+        const data = await pdf(buffer);
+        rawText = data.text;
+        if (!rawText || rawText.trim().length === 0) {
+            rawText = "[This appears to be a scanned document or image-based PDF. The text could not be directly read.]";
+        }
+    } catch (parseError) {
+        console.error("PDF Scan Error (non-fatal):", parseError);
+        rawText = "[Error reading document structure. It might be corrupted or encrypted.]";
+    }
 
-    // Use Lovable AI gateway to extract text from PDF
-    const aiResponse = await fetch("https://lovable.dev/ai/v1/chat/completions", {
+    // Clean and Structure with OpenAI
+    const openAiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openAiKey) {
+      throw new Error("OPENAI_API_KEY is not set");
+    }
+
+    const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${Deno.env.get("LOVABLE_API_KEY")}`,
+        "Authorization": `Bearer ${openAiKey}`
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "gpt-4o",
         messages: [
           {
-            role: "user",
-            content: [
-              {
-                type: "file",
-                file: {
-                  filename: filePath.split('/').pop() || "document.pdf",
-                  file_data: `data:application/pdf;base64,${base64}`,
-                },
-              },
-              {
-                type: "text",
-                text: "Extract ALL text content from this PDF document. Return ONLY the extracted text, preserving the structure and formatting as much as possible. Do not add any commentary or explanation.",
-              },
-            ],
+            role: "system",
+            content: "You are a helpful assistant that scans and reads content from PDFs. Your goal is to return the content in a clean, readable markdown format. If the text seems like a scanned error message, explain that to the user politely."
           },
-        ],
-      }),
+          {
+            role: "user",
+            content: `Here is the raw text extracted from a PDF. Please clean it up and return ONLY the cleaned text content.\n\n${rawText.substring(0, 100000)}` // Slice to avoid context limits if huge
+          }
+        ]
+      })
     });
 
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error("AI extraction error:", errorText);
-      return new Response(
-        JSON.stringify({ error: "Failed to extract PDF content", details: errorText }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (!openAiResponse.ok) {
+        const err = await openAiResponse.text();
+        console.error("OpenAI Error:", err);
+        // Fallback to raw text if OpenAI fails
+        return new Response(
+            JSON.stringify({ text: rawText, warning: "OpenAI processing failed, returning raw text." }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
     }
 
-    const aiData = await aiResponse.json();
-    const extractedText = aiData.choices?.[0]?.message?.content || "";
+    const aiData = await openAiResponse.json();
+    const cleanedText = aiData.choices?.[0]?.message?.content || rawText;
 
-    console.info(`Successfully extracted ${extractedText.length} characters`);
+    console.info(`Successfully processed text with OpenAI`);
 
     await supabase.from("ai_conversations").insert({
       user_id: userId,
       role: "assistant",
-      content: `I've successfully processed the document: ${filePath.split('/').pop()}. I am ready to help you study its content.`,
+      content: `I've successfully processed the document: ${filePath.split('/').pop()} using OpenAI. I am ready to help you study its content.`,
     });
 
     return new Response(
-      JSON.stringify({ text: extractedText }),
+      JSON.stringify({ text: cleanedText }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {

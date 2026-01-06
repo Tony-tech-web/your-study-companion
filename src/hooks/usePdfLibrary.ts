@@ -111,27 +111,24 @@ export function usePdfLibrary() {
     if (!user) return null;
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-pdf`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({
-            filePath: pdf.file_path,
-            userId: user.id,
-          }),
+      console.log('Parsing PDF via Edge Function:', pdf.file_path);
+      
+      const { data, error } = await supabase.functions.invoke('parse-pdf', {
+        body: { 
+          filePath: pdf.file_path,
+          userId: user.id 
         }
-      );
+      });
 
-      if (!response.ok) {
-        throw new Error('Failed to parse PDF');
+      if (error) {
+        console.error('Edge function error:', error);
+        throw error;
       }
 
-      const data = await response.json();
-      return data.text;
+      const text = data.text;
+      console.log('Text extracted, length:', text.length);
+
+      return text;
     } catch (error) {
       console.error('Error extracting PDF:', error);
       toast.error('Failed to extract PDF content');
