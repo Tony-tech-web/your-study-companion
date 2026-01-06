@@ -11,6 +11,12 @@ import Profile from "./pages/Profile";
 import AIAssistant from "./pages/AIAssistant";
 import StudentChat from "./pages/StudentChat";
 import SchoolNews from "./pages/SchoolNews";
+import GPACalculator from "./pages/GPACalculator";
+import StudyPlanner from "./pages/StudyPlanner";
+import CourseAssistant from "./pages/CourseAssistant";
+import ResearchAssistant from "./pages/ResearchAssistant";
+import History from "./pages/History";
+import APIStatus from "./pages/APIStatus";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -31,6 +37,12 @@ const App = () => (
               <Route path="ai-assistant" element={<AIAssistant />} />
               <Route path="chat" element={<StudentChat />} />
               <Route path="news" element={<SchoolNews />} />
+              <Route path="gpa" element={<GPACalculator />} />
+              <Route path="planner" element={<StudyPlanner />} />
+              <Route path="courses" element={<CourseAssistant />} />
+              <Route path="research" element={<ResearchAssistant />} />
+              <Route path="history" element={<History />} />
+              <Route path="api-status" element={<APIStatus />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
