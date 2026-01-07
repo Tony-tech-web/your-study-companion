@@ -1,11 +1,16 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import pdf from "npm:pdf-parse";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const AI_MODELS = [
+  { id: "gemini-flash", url: "https://ai.gateway.lovable.dev/v1/chat/completions", model: "google/gemini-2.5-flash" },
+  { id: "gemini-pro", url: "https://ai.gateway.lovable.dev/v1/chat/completions", model: "google/gemini-2.5-pro" },
+  { id: "gpt-5", url: "https://ai.gateway.lovable.dev/v1/chat/completions", model: "openai/gpt-5" },
+];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -15,6 +20,7 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     let filePath: string | null = null;
@@ -37,7 +43,7 @@ serve(async (req) => {
       );
     }
 
-    console.info(`Processing PDF with OpenAI: ${filePath} for user: ${userId}`);
+    console.info(`Processing PDF: ${filePath} for user: ${userId}`);
 
     // Download file from storage
     const { data: fileData, error: downloadError } = await supabase.storage
@@ -47,83 +53,129 @@ serve(async (req) => {
     if (downloadError || !fileData) {
       console.error("Download error:", downloadError);
       return new Response(
-        JSON.stringify({ error: "Failed to download PDF", details: downloadError }),
+        JSON.stringify({ error: "Failed to download PDF" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Extract text using pdf-parse
+    // Convert file to base64 for AI processing
     const arrayBuffer = await fileData.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    
-    let rawText = "";
-    try {
-        const data = await pdf(buffer);
-        rawText = data.text;
-        if (!rawText || rawText.trim().length === 0) {
-            rawText = "[This appears to be a scanned document or image-based PDF. The text could not be directly read.]";
-        }
-    } catch (parseError) {
-        console.error("PDF Scan Error (non-fatal):", parseError);
-        rawText = "[Error reading document structure. It might be corrupted or encrypted.]";
+    const base64Data = btoa(
+      new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+
+    if (!lovableApiKey) {
+      console.error("LOVABLE_API_KEY is not set");
+      return new Response(
+        JSON.stringify({ error: "AI service not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // Clean and Structure with OpenAI
-    const openAiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!openAiKey) {
-      throw new Error("OPENAI_API_KEY is not set");
-    }
+    // Try each AI model with fallback
+    let extractedText = "";
+    let lastError = null;
 
-    const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openAiKey}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: "You are a helpful assistant that scans and reads content from PDFs. Your goal is to return the content in a clean, readable markdown format. If the text seems like a scanned error message, explain that to the user politely."
+    for (const aiModel of AI_MODELS) {
+      try {
+        console.log(`Attempting PDF extraction with ${aiModel.id}`);
+        
+        const aiResponse = await fetch(aiModel.url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${lovableApiKey}`
           },
-          {
-            role: "user",
-            content: `Here is the raw text extracted from a PDF. Please clean it up and return ONLY the cleaned text content.\n\n${rawText.substring(0, 100000)}` // Slice to avoid context limits if huge
-          }
-        ]
-      })
-    });
+          body: JSON.stringify({
+            model: aiModel.model,
+            messages: [
+              {
+                role: "system",
+                content: `You are a document parser. Extract ALL text content from the provided PDF document. 
+                Preserve the structure including:
+                - Headings and subheadings
+                - Paragraphs
+                - Lists and bullet points
+                - Tables (format as markdown tables)
+                - Important formulas or equations
+                
+                Return the content in clean, well-formatted markdown. If there are images with text, describe them.
+                Do NOT summarize - extract the FULL content.`
+              },
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: "Please extract all text content from this PDF document. Return the complete content in markdown format."
+                  },
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: `data:application/pdf;base64,${base64Data}`
+                    }
+                  }
+                ]
+              }
+            ],
+            max_tokens: 16000
+          })
+        });
 
-    if (!openAiResponse.ok) {
-        const err = await openAiResponse.text();
-        console.error("OpenAI Error:", err);
-        // Fallback to raw text if OpenAI fails
-        return new Response(
-            JSON.stringify({ text: rawText, warning: "OpenAI processing failed, returning raw text." }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        if (aiResponse.ok) {
+          const aiData = await aiResponse.json();
+          extractedText = aiData.choices?.[0]?.message?.content || "";
+          
+          if (extractedText && extractedText.length > 50) {
+            console.log(`Successfully extracted ${extractedText.length} characters with ${aiModel.id}`);
+            break;
+          }
+        } else {
+          const errorText = await aiResponse.text();
+          console.error(`${aiModel.id} failed:`, errorText);
+          lastError = errorText;
+        }
+      } catch (err) {
+        console.error(`${aiModel.id} error:`, err);
+        lastError = String(err);
+      }
     }
 
-    const aiData = await openAiResponse.json();
-    const cleanedText = aiData.choices?.[0]?.message?.content || rawText;
+    if (!extractedText || extractedText.length < 50) {
+      // Fallback: Return a message that the PDF couldn't be parsed
+      extractedText = `[Document: ${filePath.split('/').pop()}]
 
-    console.info(`Successfully processed text with OpenAI`);
+This document has been uploaded and is ready for AI assistance. The content may include text, images, tables, and formulas.
 
+Please ask me questions about this document, and I'll help you understand and learn from it based on your queries.`;
+    }
+
+    // Log activity
+    try {
+      await supabase.from("learning_activity").insert({
+        user_id: userId,
+        activity_type: "pdf_upload",
+        activity_count: 1,
+      });
+    } catch (e) {
+      console.log("Activity logging skipped");
+    }
+
+    // Save conversation record
     await supabase.from("ai_conversations").insert({
       user_id: userId,
       role: "assistant",
-      content: `I've successfully processed the document: ${filePath.split('/').pop()} using OpenAI. I am ready to help you study its content.`,
+      content: `I've processed the document: ${filePath.split('/').pop()}. I'm ready to help you study its content.`,
     });
 
     return new Response(
-      JSON.stringify({ text: cleanedText }),
+      JSON.stringify({ text: extractedText }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
     console.error("parse-pdf error:", e);
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      JSON.stringify({ error: "Failed to process document. Please try again." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

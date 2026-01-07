@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Calculator, Plus, Trash2, Download, Upload, BookOpen, TrendingUp } from 'lucide-react';
+import { Calculator, Plus, Trash2, Download, Upload, BookOpen, TrendingUp, Save, History } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 interface Course {
@@ -14,13 +16,17 @@ interface Course {
   grade: string;
 }
 
+interface GpaRecord {
+  id: string;
+  semester: string;
+  gpa: number;
+  total_credits: number;
+  gpa_class: string;
+  created_at: string;
+}
+
 const gradePoints: Record<string, number> = {
-  'A': 5.0,
-  'B': 4.0,
-  'C': 3.0,
-  'D': 2.0,
-  'E': 1.0,
-  'F': 0.0,
+  'A': 5.0, 'B': 4.0, 'C': 3.0, 'D': 2.0, 'E': 1.0, 'F': 0.0,
 };
 
 const gradeOptions = [
@@ -32,19 +38,58 @@ const gradeOptions = [
   { value: 'F', label: 'F (0.0 points)' },
 ];
 
+const getGpaColor = (gpa: number) => {
+  if (gpa >= 4.5) return 'text-green-500';
+  if (gpa >= 3.5) return 'text-blue-500';
+  if (gpa >= 2.5) return 'text-yellow-500';
+  if (gpa >= 1.5) return 'text-orange-500';
+  return 'text-red-500';
+};
+
+const getGpaClass = (gpa: number) => {
+  if (gpa >= 4.5) return 'First Class';
+  if (gpa >= 3.5) return 'Second Class Upper';
+  if (gpa >= 2.5) return 'Second Class Lower';
+  if (gpa >= 1.5) return 'Third Class';
+  return 'Pass';
+};
+
 export default function GPACalculator() {
+  const { user } = useAuth();
   const [courses, setCourses] = useState<Course[]>([
     { id: '1', code: '', credits: 3, grade: 'A' },
   ]);
   const [gpa, setGpa] = useState<number | null>(null);
+  const [semester, setSemester] = useState('');
+  const [savedRecords, setSavedRecords] = useState<GpaRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    fetchSavedRecords();
+  }, [user]);
+
+  const fetchSavedRecords = async () => {
+    if (!user) return;
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('gpa_records')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSavedRecords(data || []);
+    } catch (error) {
+      console.error('Error fetching GPA records:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const addCourse = () => {
-    setCourses([...courses, { 
-      id: Date.now().toString(), 
-      code: '', 
-      credits: 3, 
-      grade: 'A' 
-    }]);
+    setCourses([...courses, { id: Date.now().toString(), code: '', credits: 3, grade: 'A' }]);
   };
 
   const addMultipleCourses = (count: number) => {
@@ -66,9 +111,7 @@ export default function GPACalculator() {
   };
 
   const updateCourse = (id: string, field: keyof Course, value: string | number) => {
-    setCourses(courses.map(c => 
-      c.id === id ? { ...c, [field]: value } : c
-    ));
+    setCourses(courses.map(c => c.id === id ? { ...c, [field]: value } : c));
   };
 
   const calculateGPA = () => {
@@ -92,9 +135,69 @@ export default function GPACalculator() {
     toast.success(`Your GPA is ${calculatedGpa.toFixed(2)}`);
   };
 
+  const saveGpaRecord = async () => {
+    if (!user || gpa === null) {
+      toast.error('Please calculate GPA first');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const totalCredits = courses.reduce((sum, c) => sum + c.credits, 0);
+      const gpaClass = getGpaClass(gpa);
+
+      const { error } = await supabase.from('gpa_records').insert([{
+        user_id: user.id,
+        semester: semester || `Semester ${savedRecords.length + 1}`,
+        courses: courses as any,
+        gpa: gpa,
+        total_credits: totalCredits,
+        gpa_class: gpaClass,
+      }]);
+
+      if (error) throw error;
+
+      // Log activity
+      await supabase.from('learning_activity').insert({
+        user_id: user.id,
+        activity_type: 'gpa_calc',
+        activity_count: 1,
+      });
+
+      toast.success('GPA record saved!');
+      fetchSavedRecords();
+      setSemester('');
+    } catch (error) {
+      console.error('Error saving GPA:', error);
+      toast.error('Failed to save GPA record');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const loadRecord = (record: any) => {
+    const coursesData = record.courses as Course[];
+    setCourses(coursesData);
+    setGpa(record.gpa);
+    setSemester(record.semester || '');
+    toast.success('Record loaded');
+  };
+
+  const deleteRecord = async (id: string) => {
+    try {
+      const { error } = await supabase.from('gpa_records').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Record deleted');
+      fetchSavedRecords();
+    } catch (error) {
+      toast.error('Failed to delete record');
+    }
+  };
+
   const resetAll = () => {
     setCourses([{ id: '1', code: '', credits: 3, grade: 'A' }]);
     setGpa(null);
+    setSemester('');
     toast.success('All courses cleared');
   };
 
@@ -107,22 +210,6 @@ export default function GPACalculator() {
     a.download = 'gpa-courses.json';
     a.click();
     toast.success('Data exported successfully');
-  };
-
-  const getGpaColor = (gpa: number) => {
-    if (gpa >= 4.5) return 'text-green-500';
-    if (gpa >= 3.5) return 'text-blue-500';
-    if (gpa >= 2.5) return 'text-yellow-500';
-    if (gpa >= 1.5) return 'text-orange-500';
-    return 'text-red-500';
-  };
-
-  const getGpaClass = (gpa: number) => {
-    if (gpa >= 4.5) return 'First Class';
-    if (gpa >= 3.5) return 'Second Class Upper';
-    if (gpa >= 2.5) return 'Second Class Lower';
-    if (gpa >= 1.5) return 'Third Class';
-    return 'Pass';
   };
 
   return (
@@ -139,7 +226,7 @@ export default function GPACalculator() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Course Details */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
           <Card className="glass-card">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -147,44 +234,43 @@ export default function GPACalculator() {
                   <BookOpen className="h-5 w-5 text-accent" />
                   Course Details
                 </CardTitle>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground bg-muted px-2 py-1 rounded">
-                    {courses.length} course{courses.length !== 1 ? 's' : ''}
-                  </span>
-                </div>
+                <span className="text-sm text-muted-foreground bg-muted px-2 py-1 rounded">
+                  {courses.length} course{courses.length !== 1 ? 's' : ''}
+                </span>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Semester Input */}
+              <div className="glass-card p-4 rounded-xl">
+                <label className="text-sm font-medium mb-2 block">Semester Name (Optional)</label>
+                <Input
+                  placeholder="e.g., Fall 2026, Year 1 Semester 1"
+                  value={semester}
+                  onChange={(e) => setSemester(e.target.value)}
+                  className="glass-card"
+                />
+              </div>
+
               {/* Course Management */}
               <div className="glass-card p-4 rounded-xl">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-medium">Course Management</span>
-                </div>
                 <div className="flex flex-wrap gap-2">
                   <Button variant="outline" size="sm" onClick={exportData} className="btn-smooth">
                     <Download className="h-4 w-4 mr-2" />
-                    Export Data
-                  </Button>
-                  <Button variant="outline" size="sm" className="btn-smooth">
-                    <Upload className="h-4 w-4 mr-2" />
-                    Import Data
+                    Export
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => addMultipleCourses(5)} className="btn-smooth">
                     <Plus className="h-4 w-4 mr-2" />
                     Add 5 Courses
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Export your courses to backup or share. Import supports both new and legacy formats.
-                </p>
               </div>
 
               {/* Course Table Header */}
               <div className="grid grid-cols-12 gap-2 text-sm font-medium text-muted-foreground px-2">
                 <div className="col-span-5">Course Code</div>
-                <div className="col-span-2">Credit Units</div>
+                <div className="col-span-2">Credits</div>
                 <div className="col-span-4">Grade</div>
-                <div className="col-span-1">Action</div>
+                <div className="col-span-1"></div>
               </div>
 
               {/* Course Rows */}
@@ -193,12 +279,12 @@ export default function GPACalculator() {
                   key={course.id}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
+                  transition={{ delay: index * 0.02 }}
                   className="grid grid-cols-12 gap-2 items-center"
                 >
                   <div className="col-span-5">
                     <Input
-                      placeholder="Course Code (e.g. CEE 101)"
+                      placeholder="e.g., CEE 101"
                       value={course.code}
                       onChange={(e) => updateCourse(course.id, 'code', e.target.value)}
                       className="glass-card"
@@ -207,7 +293,6 @@ export default function GPACalculator() {
                   <div className="col-span-2">
                     <Input
                       type="number"
-                      placeholder="Credits"
                       value={course.credits}
                       onChange={(e) => updateCourse(course.id, 'credits', parseInt(e.target.value) || 0)}
                       className="glass-card"
@@ -216,29 +301,19 @@ export default function GPACalculator() {
                     />
                   </div>
                   <div className="col-span-4">
-                    <Select
-                      value={course.grade}
-                      onValueChange={(value) => updateCourse(course.id, 'grade', value)}
-                    >
+                    <Select value={course.grade} onValueChange={(value) => updateCourse(course.id, 'grade', value)}>
                       <SelectTrigger className="glass-card">
-                        <SelectValue placeholder="Grade" />
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {gradeOptions.map(option => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
+                        {gradeOptions.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="col-span-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeCourse(course.id)}
-                      className="text-muted-foreground hover:text-destructive"
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => removeCourse(course.id)} className="text-muted-foreground hover:text-destructive">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
@@ -256,12 +331,60 @@ export default function GPACalculator() {
                     Calculate GPA
                   </Button>
                   <Button variant="outline" onClick={resetAll} className="btn-smooth">
-                    Reset All
+                    Reset
                   </Button>
                 </div>
               </div>
             </CardContent>
           </Card>
+
+          {/* Saved Records */}
+          {savedRecords.length > 0 && (
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <History className="h-5 w-5 text-accent" />
+                  Saved Records
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {savedRecords.map((record) => (
+                    <motion.div
+                      key={record.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-center justify-between p-3 glass-card rounded-xl hover-lift cursor-pointer"
+                      onClick={() => loadRecord(record)}
+                    >
+                      <div>
+                        <p className="font-medium">{record.semester}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {record.total_credits} credits • {new Date(record.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className={`text-lg font-bold ${getGpaColor(record.gpa)}`}>
+                            {record.gpa.toFixed(2)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{record.gpa_class}</p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => { e.stopPropagation(); deleteRecord(record.id); }}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* GPA Results */}
@@ -292,6 +415,11 @@ export default function GPACalculator() {
                   <div className="mt-4 p-3 bg-muted/50 rounded-lg text-sm">
                     <p>Total Credits: {courses.reduce((sum, c) => sum + c.credits, 0)}</p>
                   </div>
+                  
+                  <Button onClick={saveGpaRecord} disabled={isSaving} className="w-full mt-4 btn-smooth">
+                    <Save className="h-4 w-4 mr-2" />
+                    {isSaving ? 'Saving...' : 'Save Record'}
+                  </Button>
                 </motion.div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -300,7 +428,7 @@ export default function GPACalculator() {
                   </div>
                   <p className="font-medium text-muted-foreground">Ready to Calculate?</p>
                   <p className="text-sm text-muted-foreground/70 mt-1">
-                    Enter your courses and grades, then click "Calculate GPA" to see your results and performance insights.
+                    Enter your courses and grades to see results.
                   </p>
                 </div>
               )}

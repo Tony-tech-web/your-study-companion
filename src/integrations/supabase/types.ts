@@ -62,6 +62,113 @@ export type Database = {
         }
         Relationships: []
       }
+      course_materials: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_processed: boolean
+          parsed_content: string | null
+          pdf_id: string | null
+          study_tools: Json | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_processed?: boolean
+          parsed_content?: string | null
+          pdf_id?: string | null
+          study_tools?: Json | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_processed?: boolean
+          parsed_content?: string | null
+          pdf_id?: string | null
+          study_tools?: Json | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_materials_pdf_id_fkey"
+            columns: ["pdf_id"]
+            isOneToOne: false
+            referencedRelation: "student_pdfs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gpa_records: {
+        Row: {
+          courses: Json
+          created_at: string
+          gpa: number
+          gpa_class: string | null
+          id: string
+          semester: string | null
+          total_credits: number
+          user_id: string
+        }
+        Insert: {
+          courses: Json
+          created_at?: string
+          gpa: number
+          gpa_class?: string | null
+          id?: string
+          semester?: string | null
+          total_credits: number
+          user_id: string
+        }
+        Update: {
+          courses?: Json
+          created_at?: string
+          gpa?: number
+          gpa_class?: string | null
+          id?: string
+          semester?: string | null
+          total_credits?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      learning_activity: {
+        Row: {
+          activity_count: number
+          activity_date: string
+          activity_type: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          activity_count?: number
+          activity_date?: string
+          activity_type: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          activity_count?: number
+          activity_date?: string
+          activity_type?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -100,6 +207,33 @@ export type Database = {
           phone_number?: string | null
           student_id?: string
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      research_history: {
+        Row: {
+          ai_summary: string | null
+          created_at: string
+          id: string
+          query: string
+          results: Json | null
+          user_id: string
+        }
+        Insert: {
+          ai_summary?: string | null
+          created_at?: string
+          id?: string
+          query: string
+          results?: Json | null
+          user_id: string
+        }
+        Update: {
+          ai_summary?: string | null
+          created_at?: string
+          id?: string
+          query?: string
+          results?: Json | null
           user_id?: string
         }
         Relationships: []
@@ -155,6 +289,90 @@ export type Database = {
           id?: string
           uploaded_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      study_plans: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          subjects: Json
+          total_hours: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          subjects: Json
+          total_hours?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          subjects?: Json
+          total_hours?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_stats: {
+        Row: {
+          created_at: string
+          current_streak: number
+          id: string
+          last_activity_date: string | null
+          level: number
+          longest_streak: number
+          total_ai_interactions: number
+          total_flashcards_reviewed: number
+          total_pdfs_processed: number
+          total_quizzes_completed: number
+          total_study_minutes: number
+          updated_at: string
+          user_id: string
+          xp_points: number
+        }
+        Insert: {
+          created_at?: string
+          current_streak?: number
+          id?: string
+          last_activity_date?: string | null
+          level?: number
+          longest_streak?: number
+          total_ai_interactions?: number
+          total_flashcards_reviewed?: number
+          total_pdfs_processed?: number
+          total_quizzes_completed?: number
+          total_study_minutes?: number
+          updated_at?: string
+          user_id: string
+          xp_points?: number
+        }
+        Update: {
+          created_at?: string
+          current_streak?: number
+          id?: string
+          last_activity_date?: string | null
+          level?: number
+          longest_streak?: number
+          total_ai_interactions?: number
+          total_flashcards_reviewed?: number
+          total_pdfs_processed?: number
+          total_quizzes_completed?: number
+          total_study_minutes?: number
+          updated_at?: string
+          user_id?: string
+          xp_points?: number
         }
         Relationships: []
       }
