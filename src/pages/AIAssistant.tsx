@@ -62,8 +62,6 @@ export default function AIAssistant() {
       const state = location.state as { initialMessages?: Message[] } | null;
       if (state?.initialMessages) {
           setMessages(state.initialMessages);
-          // Optional: Clear state so refresh doesn't reload it?
-          // window.history.replaceState({}, ''); 
       }
   }, [location.state]);
 
@@ -102,7 +100,6 @@ export default function AIAssistant() {
   }, [messages]);
 
   const handlePdfSelect = async (pdf: PdfFile, mode: 'teach' | 'test') => {
-    // Save general chat history if we are currently in general mode
     if (!selectedPdf) {
         setGeneralMessages(messages);
     }
@@ -118,7 +115,6 @@ export default function AIAssistant() {
         setPdfContext(text);
         toast.success(`PDF loaded! Starting ${mode === 'teach' ? 'learning' : 'test'} session...`);
         
-        // Auto-send first message to start the session
         const initialMessage = mode === 'teach' 
           ? "I've uploaded a PDF document. Please help me learn and understand the content. Start by giving me an overview of what this document covers."
           : "I've uploaded a PDF document. Please start testing me on this content. Ask me questions one by one.";
@@ -137,7 +133,6 @@ export default function AIAssistant() {
   const handlePdfUpload = async (file: File) => {
     const uploaded = await uploadPdf(file);
     if (uploaded) {
-      // Auto-select for learning
       handlePdfSelect(uploaded, 'teach');
       setActiveTab('learn');
     }
@@ -145,7 +140,6 @@ export default function AIAssistant() {
 
   const clearSession = () => {
     setMessages([]);
-    // Only clear general messages if we are in general chat
     if (!selectedPdf) {
         setGeneralMessages([]);
     }
@@ -156,7 +150,7 @@ export default function AIAssistant() {
   };
 
   const switchToGeneralChat = () => {
-      if (!selectedPdf) return; // Already in general chat
+      if (!selectedPdf) return;
       
       setSelectedPdf(null);
       setPdfContext(null);
@@ -186,7 +180,8 @@ export default function AIAssistant() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
         body: JSON.stringify({
           messages: [...messages, userMessage].map((m) => ({
@@ -213,7 +208,9 @@ export default function AIAssistant() {
       }
 
       if (!resp.ok || !resp.body) {
-        throw new Error('Failed to get response');
+        const errorData = await resp.json().catch(() => ({}));
+        console.error('AI error response:', resp.status, errorData);
+        throw new Error(errorData.error || errorData.details || 'Failed to get response');
       }
 
       const reader = resp.body.getReader();
@@ -264,7 +261,6 @@ export default function AIAssistant() {
         }
       }
 
-      // Save complete assistant response to database
       if (assistantContent && user?.id) {
           const contentWithModel = `{{model:${selectedModel}}}${assistantContent}`;
           await supabase.from('ai_conversations').insert({
@@ -276,7 +272,7 @@ export default function AIAssistant() {
 
     } catch (error) {
       console.error('AI chat error:', error);
-      toast.error('Failed to get AI response. Please try again.');
+      toast.error(error instanceof Error ? error.message : 'Failed to get AI response. Please try again.');
     }
 
     setIsLoading(false);
@@ -291,7 +287,6 @@ export default function AIAssistant() {
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col animate-fade-in">
-      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="font-display text-3xl font-bold flex items-center gap-3">
@@ -344,7 +339,6 @@ export default function AIAssistant() {
                             <span className="text-xs text-muted-foreground">Most powerful</span>
                         </div>
                     </DropdownMenuItem>
-
                 </DropdownMenuContent>
              </DropdownMenu>
 
@@ -357,14 +351,8 @@ export default function AIAssistant() {
         </div>
       </div>
 
-
-
-      {/* Main Content */}
       <div className="flex-1 flex gap-4 overflow-hidden">
-        {/* Sidebar */}
-        {/* Sidebar */}
         <div className="w-80 flex-shrink-0 flex flex-col gap-4">
-          {/* Box 1: Library Navigation */}
           <Card className={`glass-card p-2 ${activeTab === 'library' ? 'border-accent/50 bg-accent/5' : ''}`}>
              <Button
                 variant={activeTab === 'library' ? 'default' : 'ghost'}
@@ -376,7 +364,6 @@ export default function AIAssistant() {
              </Button>
           </Card>
 
-          {/* Box 2: Study Modes */}
           <Card className="glass-card flex-1 overflow-hidden flex flex-col">
             <Tabs value={activeTab === 'library' ? '' : activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="h-full flex flex-col">
               <div className="p-3 pb-0">
@@ -530,7 +517,6 @@ export default function AIAssistant() {
           </Card>
         </div>
 
-        {/* Main Content Area */}
         {activeTab === 'library' ? (
           <Card className="flex-1 flex flex-col overflow-hidden glass-card">
             <QuickActionsGrid
@@ -557,8 +543,8 @@ export default function AIAssistant() {
               <div className="h-full flex items-center justify-center">
                 <div className="text-center">
                   <Loader2 className="h-12 w-12 animate-spin text-accent mx-auto mb-4" />
-                  <h3 className="font-display text-xl font-semibold">Scanning Document...</h3>
-                  <p className="text-muted-foreground">Reading and scanning PDF content...</p>
+                  <h3 className="font-display text-xl font-semibold">Scanning Content...</h3>
+                  <p className="text-muted-foreground">Preparing your study session...</p>
                 </div>
               </div>
             ) : messages.length === 0 ? (
@@ -614,7 +600,6 @@ export default function AIAssistant() {
             )}
           </CardContent>
 
-          {/* Input Area */}
           <div className="border-t border-border/50 p-4 bg-muted/30">
             <div className="flex gap-3">
               <Textarea

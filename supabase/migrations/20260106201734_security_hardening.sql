@@ -6,6 +6,8 @@
 
 DROP POLICY IF EXISTS "Authenticated users can view all messages" ON public.chat_messages;
 
+DROP POLICY IF EXISTS "Users can view their own messages" ON public.chat_messages;
+
 CREATE POLICY "Users can view their own messages" ON public.chat_messages FOR
 SELECT TO authenticated USING (
         auth.uid () = sender_id

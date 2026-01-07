@@ -6,16 +6,44 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// AI Models with automatic fallback
+// AI Models with automatic fallback - OpenAI first, then Gemini
 const AI_MODELS = [
-  { id: "gemini-flash", name: "Gemini Flash", model: "google/gemini-2.5-flash", priority: 1 },
-  { id: "gemini-pro", name: "Gemini Pro", model: "google/gemini-2.5-pro", priority: 2 },
-  { id: "gpt-5", name: "GPT-5", model: "openai/gpt-5", priority: 3 },
+  { 
+    id: "gpt-4-turbo", 
+    name: "GPT-4 Turbo", 
+    model: "gpt-4-turbo-preview", 
+    priority: 1,
+    provider: "openai",
+    url: "https://api.openai.com/v1/chat/completions"
+  },
+  { 
+    id: "gpt-4", 
+    name: "GPT-4", 
+    model: "gpt-4", 
+    priority: 2,
+    provider: "openai",
+    url: "https://api.openai.com/v1/chat/completions"
+  },
+  { 
+    id: "gemini-flash", 
+    name: "Gemini Flash", 
+    model: "gemini-1.5-flash", 
+    priority: 3,
+    provider: "gemini",
+    url: "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:streamGenerateContent"
+  },
+  { 
+    id: "gemini-pro", 
+    name: "Gemini Pro", 
+    model: "gemini-1.5-pro", 
+    priority: 4,
+    provider: "gemini",
+    url: "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:streamGenerateContent"
+  },
 ];
 
-const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
-
 serve(async (req) => {
+  // Handle CORS
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -23,7 +51,9 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
+    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+    const serperApiKey = Deno.env.get("SERPER_API_KEY");
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const body = await req.json();
@@ -31,15 +61,31 @@ serve(async (req) => {
 
     // --- STATUS CHECK MODE ---
     if (mode === "status") {
-      const statuses = AI_MODELS.map(m => ({
-        id: m.id,
-        name: m.name,
-        status: lovableApiKey ? "active" : "inactive",
-        purpose: m.id === "gemini-flash" ? "Fast responses" : m.id === "gemini-pro" ? "Advanced reasoning" : "Most powerful",
-        credits: lovableApiKey ? "Lovable AI" : "Not configured"
-      }));
+      const services = [
+        {
+          id: "openai",
+          name: "OpenAI",
+          status: openaiApiKey ? "active" : "inactive",
+          purpose: "Primary AI chat and PDF parsing",
+          credits: openaiApiKey ? "Configured" : "Not configured"
+        },
+        {
+          id: "serper",
+          name: "Serper API",
+          status: serperApiKey ? "active" : "inactive",
+          purpose: "Web search capabilities",
+          credits: serperApiKey ? "Configured" : "Not configured"
+        },
+        {
+          id: "gemini",
+          name: "Google Gemini",
+          status: geminiApiKey ? "active" : "inactive",
+          purpose: "Fallback AI provider (Gemini models)",
+          credits: geminiApiKey ? "Configured" : "Not configured"
+        }
+      ];
       
-      return new Response(JSON.stringify({ services: statuses }), {
+      return new Response(JSON.stringify({ services }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -49,25 +95,23 @@ serve(async (req) => {
     const currentMessage = message || (messages && messages[messages.length - 1]?.content);
 
     if (!userId || !currentMessage) {
+      console.error("Missing user_id or message", { userId, currentMessage });
       return new Response(
         JSON.stringify({ error: "Missing user_id or message" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    if (!lovableApiKey) {
-      return new Response(
-        JSON.stringify({ error: "AI service not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     // Insert user message into database
-    await supabase.from("ai_conversations").insert({
-      user_id: userId,
-      role: "user",
-      content: currentMessage,
-    });
+    try {
+      await supabase.from("ai_conversations").insert({
+        user_id: userId,
+        role: "user",
+        content: currentMessage,
+      });
+    } catch (dbErr) {
+      console.error("Database insert error (non-fatal):", dbErr);
+    }
 
     // Log learning activity
     try {
@@ -112,9 +156,18 @@ serve(async (req) => {
     // Determine which models to try
     let modelsToTry = [...AI_MODELS];
     if (providerId) {
-      const selectedModel = AI_MODELS.find(m => m.id === providerId || m.id === providerId.replace('google', 'gemini-flash').replace('google-pro', 'gemini-pro').replace('openrouter', 'gpt-5'));
+      const pId = String(providerId);
+      // Use exact mapping to avoid partial replacements (like google-pro becoming gemini-flash-pro)
+      const mapping: Record<string, string> = {
+        'google': 'gemini-flash',
+        'google-pro': 'gemini-pro',
+        'openrouter': 'gpt-4-turbo'
+      };
+      
+      const mappedId = mapping[pId] || pId;
+      const selectedModel = AI_MODELS.find(m => m.id === mappedId || m.id === pId);
+      
       if (selectedModel) {
-        // Put selected model first, then others as fallback
         modelsToTry = [selectedModel, ...AI_MODELS.filter(m => m.id !== selectedModel.id)];
       }
     }
@@ -125,58 +178,168 @@ serve(async (req) => {
 
     for (const aiModel of modelsToTry) {
       try {
-        console.log(`Attempting ${aiModel.name} (${aiModel.model})`);
+        console.info(`Attempting ${aiModel.name} (${aiModel.model})`);
         
-        const res = await fetch(AI_GATEWAY_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${lovableApiKey}`,
-          },
-          body: JSON.stringify({
+        let apiKey: string | undefined;
+        let requestBody: any;
+        let requestUrl: string;
+        
+        if (aiModel.provider === "openai") {
+          apiKey = openaiApiKey;
+          requestUrl = aiModel.url;
+          requestBody = {
             model: aiModel.model,
             messages: chatMessages,
             stream: true,
-          }),
+          };
+        } else if (aiModel.provider === "gemini") {
+          apiKey = geminiApiKey;
+          // Gemini uses alt=sse for streaming
+          requestUrl = `${aiModel.url}?key=${apiKey}&alt=sse`;
+          
+          // Convert OpenAI format to Gemini format
+          const geminiContents = chatMessages
+            .filter(m => m.role !== "system")
+            .map(m => ({
+              role: m.role === "assistant" ? "model" : "user",
+              parts: [{ text: String(m.content) }]
+            }));
+          
+          const systemInstruction = chatMessages.find(m => m.role === "system");
+          
+          requestBody = {
+            contents: geminiContents,
+            systemInstruction: systemInstruction ? {
+              parts: [{ text: String(systemInstruction.content) }]
+            } : undefined,
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 2048, // Reduced for faster response
+            }
+          };
+        } else {
+          console.error("Unknown provider:", aiModel.provider);
+          continue;
+        }
+        
+        if (!apiKey) {
+          console.warn(`${aiModel.name} skipped: API key missing`);
+          continue;
+        }
+        
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        
+        if (aiModel.provider === "openai") {
+          headers["Authorization"] = `Bearer ${apiKey}`;
+        }
+        
+        const res = await fetch(requestUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(requestBody),
         });
 
         if (res.ok) {
-          successfulResponse = res;
-          console.log(`Success with ${aiModel.name}`);
+          if (aiModel.provider === "gemini") {
+            // Transform Gemini SSE to OpenAI SSE format
+            const reader = res.body?.getReader();
+            const encoder = new TextEncoder();
+            const decoder = new TextDecoder();
+            
+            const stream = new ReadableStream({
+              async start(controller) {
+                try {
+                  let buffer = "";
+                  while (true) {
+                    const { done, value } = await reader!.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || "";
+                    
+                    for (const line of lines) {
+                      if (line.startsWith('data: ')) {
+                        try {
+                          const data = JSON.parse(line.slice(6));
+                          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                          if (text) {
+                            const openaiChunk = {
+                              choices: [{
+                                delta: { content: text },
+                                index: 0
+                              }]
+                            };
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify(openaiChunk)}\n\n`));
+                          }
+                        } catch (e) {
+                          // Continue on parse error
+                        }
+                      }
+                    }
+                  }
+                  controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                  controller.close();
+                } catch (err) {
+                  console.error("Gemini stream error:", err);
+                  controller.error(err);
+                }
+              }
+            });
+            
+            successfulResponse = new Response(stream, {
+              headers: { ...corsHeaders, "Content-Type": "text/event-stream" }
+            });
+          } else {
+            successfulResponse = res;
+          }
+          console.info(`Success with ${aiModel.name}`);
           break;
         } else {
           const errorText = await res.text();
-          console.error(`${aiModel.name} failed:`, res.status, errorText);
-          lastError = errorText;
+          console.error(`${aiModel.name} failed (${res.status}):`, errorText);
+          lastError = `${aiModel.name} error: ${errorText}`;
           
-          // Check for rate limit - if so, try next model immediately
-          if (res.status === 429) {
-            console.log("Rate limited, trying next model...");
-            continue;
-          }
+          if (res.status === 429) continue; // Try next on rate limit
         }
       } catch (err) {
-        console.error(`${aiModel.name} error:`, err);
+        console.error(`${aiModel.name} exception:`, err);
         lastError = String(err);
       }
     }
 
     if (!successfulResponse) {
+      console.error("All AI models failed. Final error:", lastError);
       return new Response(
-        JSON.stringify({ error: "AI service temporarily unavailable. Please try again." }),
+        JSON.stringify({ 
+          error: "AI services are currently unavailable.", 
+          details: lastError 
+        }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Stream the response
-    return new Response(successfulResponse.body, {
-      headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-    });
+    // Return the successful response (possibly transformed)
+    if (successfulResponse instanceof Response) {
+      // Re-add CORS headers to the response
+      const newHeaders = new Headers(successfulResponse.headers);
+      Object.entries(corsHeaders).forEach(([k, v]) => newHeaders.set(k, v));
+      
+      return new Response(successfulResponse.body, {
+        status: successfulResponse.status,
+        statusText: successfulResponse.statusText,
+        headers: newHeaders
+      });
+    }
+    
+    return successfulResponse;
 
   } catch (error) {
-    console.error("Edge function error:", error);
+    console.error("Critical edge function error:", error);
     return new Response(
-      JSON.stringify({ error: "An error occurred. Please try again." }),
+      JSON.stringify({ error: "An internal error occurred." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

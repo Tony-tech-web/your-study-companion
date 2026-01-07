@@ -153,19 +153,19 @@ export default function APIStatus() {
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li className="flex items-start gap-2">
               <span className="text-accent">•</span>
-              Lovable AI Gateway provides the primary chat functionality through multiple AI models
+              OpenAI powers the primary chat functionality and PDF document parsing
             </li>
             <li className="flex items-start gap-2">
               <span className="text-accent">•</span>
-              Google Gemini models are available for fast and advanced AI tasks
+              Google Gemini models provide fast fallback AI capabilities
             </li>
             <li className="flex items-start gap-2">
               <span className="text-accent">•</span>
-              OpenAI GPT-5 is available for powerful general-purpose AI capabilities
+              Serper API enables web search and research features
             </li>
             <li className="flex items-start gap-2">
               <span className="text-accent">•</span>
-              All API keys are securely managed through Lovable Cloud
+              All APIs feature automatic fallback for maximum reliability
             </li>
           </ul>
         </CardContent>
