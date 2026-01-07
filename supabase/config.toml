@@ -1,7 +1,10 @@
-project_id = "phxvizvqkueddelnseam"
+project_id = "kmthayzaarwoivnjwxpj"
 
 [functions.ai-chat]
 verify_jwt = false
 
 [functions.parse-pdf]
+verify_jwt = false
+
+[functions.generate-study-tools]
 verify_jwt = false
