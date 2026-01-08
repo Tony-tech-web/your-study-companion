@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
@@ -16,7 +17,8 @@ import StudyPlanner from "./pages/StudyPlanner";
 import CourseAssistant from "./pages/CourseAssistant";
 import ResearchAssistant from "./pages/ResearchAssistant";
 import History from "./pages/History";
-import APIStatus from "./pages/APIStatus";
+import Leaderboard from "./pages/Leaderboard";
+import Tips from "./pages/Tips";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,7 +31,7 @@ const App = () => (
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
           <Routes>
-            <Route path="/" element={<Navigate to="/auth" replace />} />
+            <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/dashboard" element={<DashboardLayout />}>
               <Route index element={<Dashboard />} />
@@ -42,7 +44,8 @@ const App = () => (
               <Route path="courses" element={<CourseAssistant />} />
               <Route path="research" element={<ResearchAssistant />} />
               <Route path="history" element={<History />} />
-              <Route path="api-status" element={<APIStatus />} />
+              <Route path="leaderboard" element={<Leaderboard />} />
+              <Route path="tips" element={<Tips />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
