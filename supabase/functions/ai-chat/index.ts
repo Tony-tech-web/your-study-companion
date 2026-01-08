@@ -9,6 +9,30 @@ const extractYear = (info: string) => {
   return yearMatch ? yearMatch[0] : "n.d.";
 };
 
+// 2. Helper for General Web Search
+async function performWebSearch(query: string) {
+  const apiKey = Deno.env.get("SERPER_API_KEY");
+  if (!apiKey) return "";
+
+  // Use AbortSignal.timeout for a 5-second wall-clock timeout for search
+  const signal = AbortSignal.timeout(5000); 
+
+  try {
+    const response = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ q: query, num: 4 }),
+      signal,
+    });
+    const data = await response.json();
+    const snippets = (data.organic || []).map((s: any) => `${s.title}: ${s.snippet}`).join("\n");
+    return snippets ? `\n\n--- WEB SEARCH CONTEXT (FOR FURTHER EXPLANATION) ---\n${snippets}\n-------------------------` : "";
+  } catch (e) {
+    console.error("Web search failed or timed out:", e);
+    return "";
+  }
+}
+
 // 2. The Robust Scholar Function
 async function performScholarSearch(query: string, retries = 1) {
   const apiKey = Deno.env.get("SERPER_API_KEY");
@@ -118,15 +142,15 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const body = await req.json();
-    const { messages, user_id, message, pdfContext, pdfImages, mode = "chat", providerId } = body;
+    const { messages, user_id, message, pdfContext, pdfImages, mode = "chat", providerId, ocrContext: cachedOcr } = body;
 
     console.log(`[DEBUG] Request mode: ${mode}, user_id: ${user_id}, keys: {openai:${!!openaiApiKey}, gemini:${!!geminiApiKey}, openrouter:${!!openrouterApiKey}, serper:${!!serperApiKey}}`);
 
     // --- High Fidelity OCR Optimization (Google Vision) ---
-    let ocrContext = "";
-    if (pdfImages && pdfImages.length > 0 && geminiApiKey) {
-      // ULTRA-LEAN CAP: Only OCR 5 pages per request to fit 13k limit
-      const imagesToOCR = pdfImages.slice(0, 5);
+    let ocrContext = cachedOcr || "";
+    if (!ocrContext && pdfImages && pdfImages.length > 0 && geminiApiKey) {
+      // HYPER-LEAN CAP: Only OCR 2 pages per request to fit 7.3k limit
+      const imagesToOCR = pdfImages.slice(0, 2);
       console.info(`Performing Google Vision OCR on ${imagesToOCR.length} images...`);
       try {
         const ocrResults = await Promise.all(imagesToOCR.map(async (imgData: string, idx: number) => {
@@ -249,13 +273,23 @@ serve(async (req) => {
       );
     }
 
+    // --- AUTOMATIC WEB SEARCH TRIGGER ---
+    let webContext = "";
+    // Only search if the user explicitly asks for external/online info to save time/tokens
+    const searchKeywords = ["search online", "surf the web", "look up online", "search the internet", "google it", "find more online"];
+    if (searchKeywords.some(k => currentMessage.toLowerCase().includes(k))) {
+      console.info("Triggering automatic web search for context...");
+      webContext = await performWebSearch(currentMessage);
+      systemPrompt += webContext;
+    }
+
     if (pdfContext || ocrContext) {
       const scanInfo = body.scanProgress ? `\n[SCAN STATUS: Page ${body.scanProgress.current} of ${body.scanProgress.total}]` : "";
       
       // AGGRESSIVE CONTEXT SLICING: Slice the full text for the current 5-page batch
       let relevantText = pdfContext || "";
       if (body.scanProgress) {
-        const startMarker = `[Page ${body.scanProgress.current - 4}]`;
+        const startMarker = `[Page ${body.scanProgress.current - 1}]`;
         const endMarker = `[Page ${body.scanProgress.current + 1}]`;
         const startIdx = relevantText.indexOf(startMarker);
         const endIdx = relevantText.indexOf(endMarker);
@@ -265,14 +299,14 @@ serve(async (req) => {
         }
       }
       
-      // ULTRA-LEAN CAP: 2,500 characters to fit 13k token limit
-      relevantText = relevantText.substring(0, 2500);
+      // HYPER-LEAN CAP: 1,000 characters to fit 7.3k token limit
+      relevantText = relevantText.substring(0, 1000);
 
       systemPrompt += `\n\n[CRITICAL: DOCUMENT CONTENT ATTACHED]${scanInfo}
 The user has uploaded a PDF document. You are currently in a BATCHED SCANNING MODE.
 
-${ocrContext ? `--- CURRENT BATCH HIGH-FIDELITY OCR (Pages ${body.scanProgress?.current - 4 || 1} to ${body.scanProgress?.current || 5}) ---
-${ocrContext}
+${ocrContext ? `--- CURRENT BATCH HIGH-FIDELITY OCR (Pages ${body.scanProgress?.current - 1 || 1} to ${body.scanProgress?.current || 2}) ---
+${ocrContext.substring(0, 1500)}
 ---------------------------------` : ""}
 
 ${relevantText ? `--- CURRENT BATCH TEXT EXTRACT ---
@@ -282,7 +316,7 @@ ${relevantText}
 INSTRUCTIONS FOR BATCHED SCANNING:
 1. FOCUS: Primarily discuss the content from the "CURRENT BATCH" provided above.
 2. LIMIT: Do NOT summarize the entire document at once. Stay focused on the current chunk to keep the teaching manageable.
-3. COMMAND: At the end of your explanation, if there are more pages left (${body.scanProgress?.current < body.scanProgress?.total}), you MUST ask: "Would you like me to scan the next 5 pages?"
+3. COMMAND: At the end of your explanation, if there are more pages left (${body.scanProgress?.current < body.scanProgress?.total}), you MUST ask: "Would you like me to scan the next 2 pages?"
 4. COMPLETION: If you have reached the end of the document (${body.scanProgress?.current >= body.scanProgress?.total}), tell the user: "We have finished scanning the document! Would you like to switch to the 'Test' tab so I can quiz you on what we've learned?"`;
     }
 
@@ -295,17 +329,20 @@ INSTRUCTIONS FOR BATCHED SCANNING:
 - Encourage the student and praise their progress`;
     } else if (mode === "test") {
       systemPrompt += `\n\nYou are in TEST/QUIZ MODE. Your goal is to assess the student's understanding.
-- Ask one question at a time
-- Wait for the student's answer before proceeding
-- Provide constructive feedback on their answers
-- Give hints if they're struggling, but encourage them to think
-- Track their progress and adjust difficulty accordingly
-- Mix question types: multiple choice, short answer, and explanation questions`;
+- Ask one question at a time.
+- Wait for the student's answer before proceeding.
+- PEDAGOGICAL FEEDBACK: If the student's answer is incorrect or partially wrong:
+  1. GENTLY say something like "That's not quite right" or "Good attempt, but not exactly."
+  2. PROVIDE THE CORRECT ANSWER immediately and explain why it's correct based on the provided PDF context.
+  3. Encourage them and ask if they are ready for the next question.
+- Do NOT just mark it as wrong without explanation. Your goal is to teach, even through failure.
+- Mix question types: multiple choice, short answer, and explanation questions.`;
     }
 
     const chatMessages = [
       { role: "system", content: systemPrompt },
-      ...(messages || [{ role: "user", content: currentMessage }]),
+      // PRUNE: Only keep the most recent 5 messages to avoid token bloat on strict models
+      ...(messages?.slice(-6) || [{ role: "user", content: currentMessage }]),
     ];
 
     // Determine which models to try
@@ -347,8 +384,8 @@ INSTRUCTIONS FOR BATCHED SCANNING:
             const lastUserIdx = messagesToSubmit.map(m => m.role).lastIndexOf("user");
             if (lastUserIdx !== -1) {
               const content: any[] = [{ type: "text", text: messagesToSubmit[lastUserIdx].content }];
-              // CAP: Only send the first 10 images to avoid context overflow
-              pdfImages.slice(0, 10).forEach(img => {
+              // CAP: Only send the first 2 images to stay within 7.3k limit
+              pdfImages.slice(0, 2).forEach(img => {
                 content.push({ type: "image_url", image_url: { url: img } });
               });
               messagesToSubmit[lastUserIdx] = { ...messagesToSubmit[lastUserIdx], content };
@@ -415,8 +452,8 @@ INSTRUCTIONS FOR BATCHED SCANNING:
               
               // Add images to this first user message
               if (pdfImages && pdfImages.length > 0) {
-                // CAP: Only send the first 10 images to avoid context overflow
-                pdfImages.slice(0, 10).forEach(imgData => {
+                // CAP: Only send the first 2 images to stay within 7.3k limit
+                pdfImages.slice(0, 2).forEach(imgData => {
                   const [header, base64] = imgData.split(',');
                   const mimeType = header.split(':')[1].split(';')[0];
                   firstUserMsg.parts.push({
@@ -486,7 +523,8 @@ INSTRUCTIONS FOR BATCHED SCANNING:
             responseHeaders.set(key, value as string);
           });
           responseHeaders.set("x-citations", JSON.stringify(citations || []));
-          responseHeaders.set("Access-Control-Expose-Headers", "x-citations");
+          responseHeaders.set("x-ocr-context", encodeURIComponent(ocrContext));
+          responseHeaders.set("Access-Control-Expose-Headers", "x-citations, x-ocr-context");
 
           if (aiModel.provider === "gemini") {
             successfulResponse = new Response(stream, {

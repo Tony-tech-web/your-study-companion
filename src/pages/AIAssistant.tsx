@@ -14,7 +14,8 @@ import {
   X,
   Zap,
   Brain,
-  ChevronDown
+  ChevronDown,
+  RefreshCw
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,7 @@ import { PdfUploader } from '@/components/ai/PdfUploader';
 import { PdfLibrary } from '@/components/ai/PdfLibrary';
 import { QuickActionsGrid } from '@/components/ai/QuickActionsGrid';
 import { usePdfLibrary, PdfFile } from '@/hooks/usePdfLibrary';
+import MarkdownRenderer from '@/components/MarkdownRenderer';
 
 interface Message {
   id: string;
@@ -86,6 +88,7 @@ export default function AIAssistant() {
   const [selectedPdf, setSelectedPdf] = useState<PdfFile | null>(null);
   const [pdfContext, setPdfContext] = useState<string | null>(null);
   const [pdfImages, setPdfImages] = useState<string[]>([]);
+  const [ocrContext, setOcrContext] = useState<string | null>(null);
   const [isExtractingPdf, setIsExtractingPdf] = useState(false);
   const [scanProgress, setScanProgress] = useState<{ current: number; total: number; isScanning: boolean } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -112,10 +115,10 @@ export default function AIAssistant() {
     setMessages([]);
     
     try {
-      // 1. Get initial text and the first 5 images
+      // 1. Get initial text and the first 2 images
       const [text, images] = await Promise.all([
         extractPdfContent(pdf),
-        getPdfVisualContext(pdf, 1, 5)
+        getPdfVisualContext(pdf, 1, 2)
       ]);
       
       if (text) {
@@ -129,15 +132,16 @@ export default function AIAssistant() {
           ? parseInt(text.substring(pageCountOffset + 6, text.indexOf(']', pageCountOffset))) 
           : 5;
           
-        setScanProgress({ current: Math.min(5, estimatedTotal), total: estimatedTotal, isScanning: true });
+        setScanProgress({ current: Math.min(2, estimatedTotal), total: estimatedTotal, isScanning: true });
         
-        toast.success(`PDF loaded! Starting with first 5 pages...`);
+        toast.success(`PDF loaded! Starting with first 2 pages...`);
         
         const initialMessage = mode === 'teach' 
-          ? `I've uploaded a PDF document. Please help me learn and understand the content. Start by giving me an overview of the FIRST 5 PAGES. Then ask me if I'm ready to continue to the next 5 pages.`
+          ? `I've uploaded a PDF document. Please help me learn and understand the content. Start by giving me an overview of the FIRST 2 PAGES. Then ask me if I'm ready to continue to the next 2 pages.`
           : "I've uploaded a PDF document. Please start testing me on this content. Ask me questions one by one.";
         
         setInput(initialMessage);
+        setOcrContext(null); // Reset cache for new batch
         setTimeout(() => sendMessage(text, mode, initialMessage, images || []), 100);
       }
     } catch (error) {
@@ -173,7 +177,7 @@ export default function AIAssistant() {
     if (!scanProgress || !selectedPdf) return;
     
     const nextStart = scanProgress.current + 1;
-    const nextBatchSize = 5;
+    const nextBatchSize = 2; // Reduced for Hyper-Lean mode
     
     setIsExtractingPdf(true);
     try {
@@ -181,7 +185,8 @@ export default function AIAssistant() {
       const newCurrent = Math.min(scanProgress.current + nextBatchSize, scanProgress.total);
       
       setScanProgress({ ...scanProgress, current: newCurrent });
-      setPdfImages(images);
+      setPdfImages(images || []);
+      setOcrContext(null); // Reset cache for new batch
       
       const continueMsg = `I'm ready for the next section. Please scan pages ${nextStart} to ${newCurrent} and explain them.`;
       setInput('');
@@ -204,6 +209,7 @@ export default function AIAssistant() {
       setSelectedPdf(null);
       setPdfContext(null);
       setPdfImages([]);
+      setOcrContext(null);
       setStudyMode('chat');
       setMessages(generalMessages);
       setActiveTab('learn');
@@ -241,11 +247,23 @@ export default function AIAssistant() {
           providerId: selectedModel,
           pdfContext: contextOverride || pdfContext,
           pdfImages: imagesOverride || pdfImages,
+          ocrContext: ocrContext, // Use cached OCR if available
           mode: modeOverride || studyMode,
           userId: user?.id,
           scanProgress: scanProgress ? { current: scanProgress.current, total: scanProgress.total } : null
         }),
       });
+
+      // Handle OCR caching from headers
+      const xOcr = resp.headers.get('x-ocr-context');
+      if (xOcr && !ocrContext) {
+        try {
+          const decodedOcr = decodeURIComponent(xOcr);
+          setOcrContext(decodedOcr);
+        } catch (e) {
+          console.warn("Failed to decode OCR context header:", e);
+        }
+      }
 
       if (resp.status === 429) {
         toast.error('Rate limit exceeded. Please try again later.');
@@ -458,32 +476,46 @@ export default function AIAssistant() {
                              </Button>
 
                              {pdfs.map((pdf) => (
-                                <div key={pdf.id} className="group flex items-center gap-1 w-full">
-                                    <Button
-                                        variant={selectedPdf?.id === pdf.id ? "secondary" : "ghost"}
-                                        size="sm"
-                                        className={`flex-1 justify-start truncate ${selectedPdf?.id === pdf.id ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'}`}
-                                        onClick={() => handlePdfSelect(pdf, 'teach')}
-                                    >
-                                        <BookOpen className="h-3 w-3 mr-2 flex-shrink-0" />
-                                        <span className="truncate">{pdf.file_name}</span>
-                                        {selectedPdf?.id === pdf.id && (
-                                            <div className="ml-2 w-1.5 h-1.5 rounded-full bg-accent animate-pulse flex-shrink-0" />
-                                        )}
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (confirm('Are you sure you want to delete this PDF?')) {
-                                                deletePdf(pdf);
-                                            }
-                                        }}
-                                    >
-                                        <Trash2 className="h-3 w-3" />
-                                    </Button>
+                                <div key={pdf.id} className="group relative pr-1">
+                                    {selectedPdf?.id === pdf.id && (
+                                      <motion.div 
+                                        layoutId="active-pdf-indicator"
+                                        className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-accent rounded-full z-10"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                      />
+                                    )}
+                                    <div className="flex items-center gap-1 w-full pl-2">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className={`flex-1 justify-start truncate transition-all duration-300 relative group/btn ${
+                                              selectedPdf?.id === pdf.id 
+                                                ? 'bg-accent/10 border-accent/20 border text-accent shadow-[0_0_15px_rgba(var(--accent-rgb),0.1)]' 
+                                                : 'text-muted-foreground hover:text-foreground hover:bg-accent/5'
+                                            }`}
+                                            onClick={() => handlePdfSelect(pdf, 'teach')}
+                                        >
+                                            <BookOpen className={`h-3.5 w-3.5 mr-2.5 flex-shrink-0 transition-colors ${selectedPdf?.id === pdf.id ? 'text-accent' : 'text-muted-foreground group-hover/btn:text-foreground'}`} />
+                                            <span className={`truncate font-medium ${selectedPdf?.id === pdf.id ? 'text-accent' : ''}`}>{pdf.file_name}</span>
+                                            {selectedPdf?.id === pdf.id && (
+                                                <div className="ml-2 w-1.5 h-1.5 rounded-full bg-accent animate-pulse flex-shrink-0" />
+                                            )}
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (confirm('Are you sure you want to delete this PDF?')) {
+                                                    deletePdf(pdf);
+                                                }
+                                            }}
+                                        >
+                                            <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                    </div>
                                 </div>
                              ))}
                         </div>
@@ -630,7 +662,11 @@ export default function AIAssistant() {
                             : 'chat-message-assistant'
                         }`}
                       >
-                        <div className="whitespace-pre-wrap">{message.content}</div>
+                        {message.role === 'user' ? (
+                          <div className="whitespace-pre-wrap">{message.content}</div>
+                        ) : (
+                          <MarkdownRenderer content={message.content} />
+                        )}
                       </div>
                     </motion.div>
                   ))}
@@ -669,7 +705,7 @@ export default function AIAssistant() {
                       className="h-7 text-[10px] uppercase tracking-wider font-bold bg-accent/10 hover:bg-accent/20 text-accent btn-smooth"
                     >
                       <RefreshCw className="h-3 w-3 mr-1.5" />
-                      Scan Next 5
+                      Scan Next 2
                     </Button>
                   )}
                   {scanProgress.current >= scanProgress.total && !isLoading && studyMode === 'teach' && (
