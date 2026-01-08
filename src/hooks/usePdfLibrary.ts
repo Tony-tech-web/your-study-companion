@@ -161,6 +161,59 @@ ${result.text}`;
     }
   }, [user]);
 
+  const getPdfVisualContext = async (pdf: PdfFile): Promise<string[]> => {
+    if (!user) return [];
+    
+    try {
+      console.log('Generating visual context for PDF...');
+      
+      // 1. Download file
+      const { data: fileBlob, error: downloadError } = await supabase.storage
+        .from('student-pdfs')
+        .download(pdf.file_path);
+      
+      if (downloadError) throw downloadError;
+      
+      // 2. Load PDF.js (using the version from package.json)
+      const pdfjs = await import('pdfjs-dist');
+      pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+      
+      const arrayBuffer = await fileBlob.arrayBuffer();
+      const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+      const pdfDoc = await loadingTask.promise;
+      
+      const images: string[] = [];
+      // Capture first 5 pages as images (sweet spot for context vs payload size)
+      const pagesToRender = Math.min(pdfDoc.numPages, 5);
+      
+      for (let i = 1; i <= pagesToRender; i++) {
+        const page = await pdfDoc.getPage(i);
+        const viewport = page.getViewport({ scale: 1.5 }); // Good balance of quality/size
+        
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        if (!context) continue;
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+        
+        // Convert to low-quality JPEG to save on transit data
+        images.push(canvas.toDataURL('image/jpeg', 0.6));
+      }
+      
+      console.log(`Generated ${images.length} page images for visual context`);
+      return images;
+    } catch (error) {
+      console.error('Visual context error:', error);
+      return [];
+    }
+  };
+
   useEffect(() => {
     fetchPdfs();
   }, [user]);
@@ -172,6 +225,7 @@ ${result.text}`;
     uploadPdf,
     deletePdf,
     extractPdfContent,
+    getPdfVisualContext,
     refreshPdfs: fetchPdfs,
   };
 }

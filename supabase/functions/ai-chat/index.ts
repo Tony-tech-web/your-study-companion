@@ -1,45 +1,105 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// 1. Helper for Year Extraction and Sanitization
+const cleanText = (text: string) => text.replace(/[\x00-\x1F\x7F-\x9F]/g, "").substring(0, 500);
+
+const extractYear = (info: string) => {
+  const yearMatch = info?.match(/\b(19|20)\d{2}\b/);
+  return yearMatch ? yearMatch[0] : "n.d.";
+};
+
+// 2. The Robust Scholar Function
+async function performScholarSearch(query: string, retries = 1) {
+  const apiKey = Deno.env.get("SERPER_API_KEY");
+  if (!apiKey) return { promptString: "Research unavailable (API Key missing).", citations: [] };
+
+  // Use AbortSignal.timeout for a 10-second wall-clock timeout
+  const signal = AbortSignal.timeout(10000); 
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch("https://google.serper.dev/scholar", {
+        method: "POST",
+        headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ q: query, num: 6 }),
+        signal,
+      });
+
+      if (!response.ok) {
+        if (response.status === 429 || response.status >= 500) continue; // Retry transient errors
+        throw new Error(`Serper Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Structure the data for both the AI and the UI
+      const results = (data.organic || []).map((paper: any, index: number) => ({
+        id: `ref-${index + 1}`,
+        title: paper.title,
+        authors: paper.publicationInfo || "Unknown Authors",
+        year: extractYear(paper.publicationInfo),
+        snippet: cleanText(paper.snippet),
+        link: paper.link,
+      }));
+
+      // Create a formatted string for the AI's system prompt
+      const promptString = results.map(r => 
+        `[${r.id}] ${r.title} (${r.year})\nSource: ${r.authors}\nSnippet: ${r.snippet}`
+      ).join("\n\n");
+
+      return { promptString, citations: results };
+
+    } catch (err) {
+      if (attempt === retries) {
+        console.error("Scholar search failed after retries:", err);
+        return { promptString: "Search currently unavailable.", citations: [] };
+      }
+      // Brief wait before retry (200ms)
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// AI Models with automatic fallback - OpenAI first, then Gemini
+// AI Models with automatic fallback - OpenAI primary, OpenRouter & Gemini fallback
 const AI_MODELS = [
   { 
-    id: "gpt-4-turbo", 
-    name: "GPT-4 Turbo", 
-    model: "gpt-4-turbo-preview", 
+    id: "gpt-4o", 
+    name: "GPT-4o (Standard)", 
+    model: "gpt-4o", 
     priority: 1,
     provider: "openai",
     url: "https://api.openai.com/v1/chat/completions"
   },
   { 
-    id: "gpt-4", 
-    name: "GPT-4", 
-    model: "gpt-4", 
+    id: "gpt-4o-mini", 
+    name: "GPT-4o Mini", 
+    model: "gpt-4o-mini", 
     priority: 2,
     provider: "openai",
     url: "https://api.openai.com/v1/chat/completions"
   },
   { 
-    id: "gemini-flash", 
-    name: "Gemini Flash", 
-    model: "gemini-1.5-flash", 
+    id: "openrouter-gpt4", 
+    name: "OpenRouter GPT-4", 
+    model: "openai/gpt-4o", // Updated to 4o
     priority: 3,
-    provider: "gemini",
-    url: "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:streamGenerateContent"
+    provider: "openrouter",
+    url: "https://openrouter.ai/api/v1/chat/completions"
   },
   { 
-    id: "gemini-pro", 
-    name: "Gemini Pro", 
-    model: "gemini-1.5-pro", 
+    id: "gemini-flash", 
+    name: "Gemini 1.5 Flash", 
+    model: "gemini-1.5-flash", 
     priority: 4,
     provider: "gemini",
-    url: "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:streamGenerateContent"
-  },
+    url: "https://generativelanguage.googleapis.com/v1beta/models"
+  }
 ];
 
 serve(async (req) => {
@@ -54,10 +114,13 @@ serve(async (req) => {
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
     const serperApiKey = Deno.env.get("SERPER_API_KEY");
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    const openrouterApiKey = Deno.env.get("OPENROUTER_API_KEY");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const body = await req.json();
     const { messages, user_id, message, pdfContext, mode = "chat", providerId } = body;
+
+    console.log(`[DEBUG] Request mode: ${mode}, user_id: ${user_id}, keys: {openai:${!!openaiApiKey}, gemini:${!!geminiApiKey}, openrouter:${!!openrouterApiKey}, serper:${!!serperApiKey}}`);
 
     // --- STATUS CHECK MODE ---
     if (mode === "status") {
@@ -66,8 +129,22 @@ serve(async (req) => {
           id: "openai",
           name: "OpenAI",
           status: openaiApiKey ? "active" : "inactive",
-          purpose: "Primary AI chat and PDF parsing",
+          purpose: "Primary AI chat (GPT-4o, GPT-4 Turbo, GPT-3.5)",
           credits: openaiApiKey ? "Configured" : "Not configured"
+        },
+        {
+          id: "openrouter",
+          name: "OpenRouter",
+          status: openrouterApiKey ? "active" : "inactive",
+          purpose: "Backup AI provider (Multiple models)",
+          credits: openrouterApiKey ? "Configured" : "Not configured"
+        },
+        {
+          id: "gemini",
+          name: "Google Gemini",
+          status: geminiApiKey ? "active" : "inactive",
+          purpose: "Fallback AI provider (Gemini Flash & Pro)",
+          credits: geminiApiKey ? "Configured" : "Not configured"
         },
         {
           id: "serper",
@@ -75,13 +152,6 @@ serve(async (req) => {
           status: serperApiKey ? "active" : "inactive",
           purpose: "Web search capabilities",
           credits: serperApiKey ? "Configured" : "Not configured"
-        },
-        {
-          id: "gemini",
-          name: "Google Gemini",
-          status: geminiApiKey ? "active" : "inactive",
-          purpose: "Fallback AI provider (Gemini models)",
-          credits: geminiApiKey ? "Configured" : "Not configured"
         }
       ];
       
@@ -90,7 +160,6 @@ serve(async (req) => {
       });
     }
 
-    // --- CHAT MODE ---
     const userId = user_id || body.userId;
     const currentMessage = message || (messages && messages[messages.length - 1]?.content);
 
@@ -101,6 +170,8 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const citations: any[] = [];
 
     // Insert user message into database
     try {
@@ -127,8 +198,27 @@ serve(async (req) => {
     // Build system prompt based on mode
     let systemPrompt = `You are Elizade AI, an intelligent study assistant for university students at Elizade University. You are helpful, encouraging, and focused on helping students learn effectively.`;
     
+    // --- RESEARCH MODE FAST-PATH ---
+    if (mode === "research" && currentMessage) {
+      console.info("Entering research mode for:", currentMessage);
+      const { promptString, citations: searchCitations } = await performScholarSearch(currentMessage);
+      
+      // We don't need the AI to summarize for the list view, just return citations
+      return new Response(
+        JSON.stringify({ 
+          text: "Research results retrieved.", 
+          citations: searchCitations 
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     if (pdfContext) {
-      systemPrompt += `\n\nDocument Context:\n${pdfContext.substring(0, 50000)}`;
+      systemPrompt += `\n\n[CRITICAL: DOCUMENT CONTENT ATTACHED]
+The user has uploaded a PDF document. Below is the text extracted from that document. You HAVE full access to this content. When the user asks about the document, use this text to answer. Do NOT say you don't have access.
+
+Document Content:
+${pdfContext.substring(0, 50000)}`;
     }
 
     if (mode === "teach") {
@@ -157,11 +247,10 @@ serve(async (req) => {
     let modelsToTry = [...AI_MODELS];
     if (providerId) {
       const pId = String(providerId);
-      // Use exact mapping to avoid partial replacements (like google-pro becoming gemini-flash-pro)
       const mapping: Record<string, string> = {
         'google': 'gemini-flash',
         'google-pro': 'gemini-pro',
-        'openrouter': 'gpt-4-turbo'
+        'openrouter': 'openrouter-gpt4'
       };
       
       const mappedId = mapping[pId] || pId;
@@ -175,28 +264,44 @@ serve(async (req) => {
     // Try each model with automatic fallback
     let successfulResponse = null;
     let lastError = null;
+    let modelsAttempted = 0;
 
     for (const aiModel of modelsToTry) {
       try {
-        console.info(`Attempting ${aiModel.name} (${aiModel.model})`);
-        
         let apiKey: string | undefined;
         let requestBody: any;
         let requestUrl: string;
         
         if (aiModel.provider === "openai") {
           apiKey = openaiApiKey;
+          if (!apiKey) continue;
           requestUrl = aiModel.url;
           requestBody = {
             model: aiModel.model,
             messages: chatMessages,
             stream: true,
+            temperature: 0.7,
+            max_tokens: 1000,
+          };
+        } else if (aiModel.provider === "openrouter") {
+          apiKey = openrouterApiKey;
+          if (!apiKey) continue;
+          requestUrl = aiModel.url;
+          requestBody = {
+            model: aiModel.model,
+            messages: chatMessages,
+            stream: true,
+            temperature: 0.7,
+            max_tokens: 1000,
           };
         } else if (aiModel.provider === "gemini") {
           apiKey = geminiApiKey;
-          // Gemini uses alt=sse for streaming
-          requestUrl = `${aiModel.url}?key=${apiKey}&alt=sse`;
+          if (!apiKey) continue;
           
+          // Gemini native URL construction
+          requestUrl = `${aiModel.url}/${aiModel.model}:generateContent?key=${apiKey}`;
+          
+<<<<<<< HEAD
           // Convert OpenAI format to Gemini format.
           // Gemini REST API does not accept a "system" role, and the previous
           // "systemInstruction" field is currently rejected by the endpoint.
@@ -223,28 +328,49 @@ serve(async (req) => {
             parts: [{ text: String(m.content) }]
           }));
 
+=======
+          // Convert OpenAI format to Gemini format
+          const geminiContents = chatMessages
+            .filter(m => m.role !== "system")
+            .map(m => ({
+              role: m.role === "assistant" ? "model" : "user",
+              parts: [{ text: String(m.content).trim() }]
+            }));
+          
+          // Add system prompt to first user message context for Gemini
+          const systemMsg = chatMessages.find(m => m.role === "system");
+          if (systemMsg && geminiContents.length > 0) {
+            const firstUserMsg = geminiContents.find(c => c.role === "user");
+            if (firstUserMsg) {
+              firstUserMsg.parts[0].text = `System Instructions: ${systemMsg.content}\n\nUser Message: ${firstUserMsg.parts[0].text}`;
+            }
+          }
+          
+>>>>>>> 6a0461f (ai is finally working with reasarech and pdf)
           requestBody = {
             contents: geminiContents,
             generationConfig: {
               temperature: 0.7,
+<<<<<<< HEAD
               maxOutputTokens: 2048, // Reduced for faster response
             },
+=======
+              maxOutputTokens: 2048,
+            }
+>>>>>>> 6a0461f (ai is finally working with reasarech and pdf)
           };
         } else {
-          console.error("Unknown provider:", aiModel.provider);
           continue;
         }
-        
-        if (!apiKey) {
-          console.warn(`${aiModel.name} skipped: API key missing`);
-          continue;
-        }
+
+        console.info(`Attempting ${aiModel.name} (${aiModel.model})...`);
+        modelsAttempted++;
         
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
         };
         
-        if (aiModel.provider === "openai") {
+        if (aiModel.provider === "openai" || aiModel.provider === "openrouter") {
           headers["Authorization"] = `Bearer ${apiKey}`;
         }
         
@@ -255,98 +381,86 @@ serve(async (req) => {
         });
 
         if (res.ok) {
+          // ... successful response handling ...
+          let stream;
           if (aiModel.provider === "gemini") {
-            // Transform Gemini SSE to OpenAI SSE format
-            const reader = res.body?.getReader();
+            const data = await res.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
             const encoder = new TextEncoder();
-            const decoder = new TextDecoder();
-            
-            const stream = new ReadableStream({
-              async start(controller) {
-                try {
-                  let buffer = "";
-                  while (true) {
-                    const { done, value } = await reader!.read();
-                    if (done) break;
-                    
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || "";
-                    
-                    for (const line of lines) {
-                      if (line.startsWith('data: ')) {
-                        try {
-                          const data = JSON.parse(line.slice(6));
-                          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                          if (text) {
-                            const openaiChunk = {
-                              choices: [{
-                                delta: { content: text },
-                                index: 0
-                              }]
-                            };
-                            controller.enqueue(encoder.encode(`data: ${JSON.stringify(openaiChunk)}\n\n`));
-                          }
-                        } catch (e) {
-                          // Continue on parse error
-                        }
-                      }
-                    }
-                  }
-                  controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-                  controller.close();
-                } catch (err) {
-                  console.error("Gemini stream error:", err);
-                  controller.error(err);
-                }
+            stream = new ReadableStream({
+              start(controller) {
+                const openaiChunk = { choices: [{ delta: { content: text }, index: 0 }] };
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(openaiChunk)}\n\n`));
+                controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                controller.close();
               }
             });
-            
+          }
+
+          const responseHeaders = new Headers();
+          Object.entries(corsHeaders).forEach(([key, value]) => {
+            responseHeaders.set(key, value as string);
+          });
+          responseHeaders.set("x-citations", JSON.stringify(citations || []));
+          responseHeaders.set("Access-Control-Expose-Headers", "x-citations");
+
+          if (aiModel.provider === "gemini") {
             successfulResponse = new Response(stream, {
-              headers: { ...corsHeaders, "Content-Type": "text/event-stream" }
+              headers: {
+                ...Object.fromEntries(responseHeaders.entries()),
+                "Content-Type": "text/event-stream"
+              }
             });
           } else {
-            successfulResponse = res;
+            const finalHeaders = new Headers(res.headers);
+            responseHeaders.forEach((value, key) => finalHeaders.set(key, value));
+            successfulResponse = new Response(res.body, {
+              status: res.status,
+              statusText: res.statusText,
+              headers: finalHeaders
+            });
           }
-          console.info(`Success with ${aiModel.name}`);
+          console.info(`✓ Success with ${aiModel.name}`);
           break;
         } else {
           const errorText = await res.text();
-          console.error(`${aiModel.name} failed (${res.status}):`, errorText);
-          lastError = `${aiModel.name} error: ${errorText}`;
-          
-          if (res.status === 429) continue; // Try next on rate limit
+          console.error(`✗ ${aiModel.name} failed (${res.status}):`, errorText);
+          lastError = `${aiModel.name} (${res.status}): ${errorText}`;
+          if (res.status === 429 || res.status >= 500) continue;
         }
       } catch (err) {
-        console.error(`${aiModel.name} exception:`, err);
-        lastError = String(err);
+        console.error(`✗ ${aiModel.name} exception:`, err);
+        lastError = `${aiModel.name} exception: ${String(err)}`;
       }
     }
 
     if (!successfulResponse) {
-      console.error("All AI models failed. Final error:", lastError);
+      const diagnostics = {
+        modelsToTry: modelsToTry.map(m => m.name),
+        modelsAttempted,
+        openaiKey: !!openaiApiKey,
+        geminiKey: !!geminiApiKey,
+        openrouterKey: !!openrouterApiKey,
+        serperKey: !!serperApiKey,
+        lastAttemptedModel: modelsToTry[modelsAttempted - 1]?.name || "none"
+      };
+
+      const errorMsg = modelsAttempted === 0 
+        ? "No AI services are configured. Check your Supabase secrets."
+        : "All AI services failed to respond.";
+      
+      console.error(`Final failure: ${errorMsg}`, diagnostics, `Last error: ${lastError}`);
+      
       return new Response(
         JSON.stringify({ 
-          error: "AI services are currently unavailable.", 
-          details: lastError 
+          error: errorMsg, 
+          details: lastError,
+          diagnostics
         }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Return the successful response (possibly transformed)
-    if (successfulResponse instanceof Response) {
-      // Re-add CORS headers to the response
-      const newHeaders = new Headers(successfulResponse.headers);
-      Object.entries(corsHeaders).forEach(([k, v]) => newHeaders.set(k, v));
-      
-      return new Response(successfulResponse.body, {
-        status: successfulResponse.status,
-        statusText: successfulResponse.statusText,
-        headers: newHeaders
-      });
-    }
-    
     return successfulResponse;
 
   } catch (error) {

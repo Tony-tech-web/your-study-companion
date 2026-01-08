@@ -30,7 +30,7 @@ serve(async (req) => {
 
     console.info(`Processing PDF: ${filePath}`);
 
-    // Download file from storage
+    // 33. Download file from storage
     const { data: fileData, error: downloadError } = await supabase.storage
       .from("student-pdfs")
       .download(filePath);
@@ -43,26 +43,58 @@ serve(async (req) => {
       );
     }
 
-    // PDF extraction in Edge Functions is limited. 
-    // Since we want to use OpenAI to "read" the PDF, and Vision doesn't support PDFs directly,
-    // and full PDF libraries are heavy, we'll return a descriptive message 
-    // that tells ai-chat the document is available.
-    // 
-    // In a production app, you would use a dedicated service like AWS Textract, 
-    // Adobe PDF Services, or a heavy worker to extract text.
-    // 
-    // For this implementation, we will provide a high-quality placeholder 
-    // that allows the chat to proceed, and suggest the user uploads images of pages 
-    // if they want pixel-perfect reading.
-    
-    const fileName = filePath.split('/').pop() || "Document";
-    const extractedText = `[STUDY DOCUMENT: ${fileName}]
+    console.info(`PDF downloaded successfully, size: ${fileData.size} bytes`);
 
-The document "${fileName}" has been successfully uploaded to Elizade AI. 
+    // Use a lightweight PDF parsing strategy
+    let extractedText = "";
+    try {
+      // Import pdfjs-dist dynamically to avoid issues with basic Deno deployments
+      // We use a specific version that's known to be stable with ESM
+      const pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/+esm");
+      
+      const arrayBuffer = await fileData.arrayBuffer();
+      const loadingTask = pdfjs.getDocument({
+        data: arrayBuffer,
+        useSystemFonts: true,
+        disableFontFace: true,
+      });
+      
+      const pdf = await loadingTask.promise;
+      const numPages = pdf.numPages;
+      console.info(`Extracting text from ${numPages} pages...`);
+      
+      let fullText = "";
+      // Limit to first 50 pages to stay within memory/time limits
+      const pagesToProcess = Math.min(numPages, 50);
+      
+      for (let i = 1; i <= pagesToProcess; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items
+          .map((item: any) => item.str)
+          .join(" ");
+        fullText += `[Page ${i}]\n${pageText}\n\n`;
+      }
+      
+      extractedText = fullText.trim();
+      
+      if (!extractedText) {
+        throw new Error("No text content found in PDF (might be image-based)");
+      }
+      
+      console.info(`Successfully extracted ${extractedText.length} characters`);
+    } catch (parseError) {
+      console.error("PDF Parse error:", parseError);
+      // Fallback message if extraction fails (e.g. scanned PDF)
+      extractedText = `[STUDY DOCUMENT: ${filePath.split('/').pop()}]
+      
+NOTE: This document appears to be image-based or protected. I can see that it's present, but I couldn't extract the text directly. 
 
-System Note: Detailed text extraction is currently being optimized. Please ask me questions about this document, and I will use my advanced reasoning to assist you based on the context of your course and common academic knowledge related to this topic.
-
-If you have specific pages you want me to read with 100% accuracy, you can also paste specific text sections here for immediate analysis.`;
+As a study assistant, I suggest:
+1. Try uploading a text-based version of this PDF.
+2. Paste specific important sections from the document here for analysis.
+3. If this is a scanned textbook, try using an OCR tool first.`;
+    }
 
     // Log activity
     try {

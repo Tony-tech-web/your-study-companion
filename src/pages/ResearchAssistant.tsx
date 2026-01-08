@@ -84,18 +84,56 @@ export default function ResearchAssistant() {
     setAiInsights(null);
     
     try {
+<<<<<<< HEAD
       const { data, error } = await supabase.functions.invoke('research-search', {
         body: { query, userId: user?.id },
+=======
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        toast.error('Please log in to use the Research Assistant');
+        setIsSearching(false);
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke('ai-chat', {
+        body: {
+          user_id: user.id,
+          messages: [{ role: 'user', content: query }],
+          message: query,
+          mode: 'research',
+          providerId: 'google', // Use Gemini Flash as configured in the function
+        },
+>>>>>>> 6a0461f (ai is finally working with reasarech and pdf)
       });
 
       if (error) throw error;
 
+<<<<<<< HEAD
       if (data) {
         setResults(data.results || []);
         setAiInsights(data.insights || null);
         toast.success('Research complete!');
       }
     } catch (error: any) {
+=======
+      // Extract results from the response
+      if (data && data.citations) {
+        const researchResults: SearchResult[] = data.citations.map((cite: any) => ({
+          id: cite.id,
+          title: cite.title,
+          snippet: cite.snippet,
+          url: cite.link || '#',
+          source: `${cite.authors} (${cite.year})`,
+        }));
+        setResults(researchResults);
+      } else {
+        // Fallback or empty state
+        toast.info('No citations found for this topic.');
+      }
+      toast.success('Search completed!');
+    } catch (error) {
+>>>>>>> 6a0461f (ai is finally working with reasarech and pdf)
       console.error('Search error:', error);
       toast.error('Search failed. Please try again.');
     } finally {
