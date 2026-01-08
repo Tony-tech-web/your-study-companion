@@ -118,9 +118,45 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const body = await req.json();
-    const { messages, user_id, message, pdfContext, mode = "chat", providerId } = body;
+    const { messages, user_id, message, pdfContext, pdfImages, mode = "chat", providerId } = body;
 
     console.log(`[DEBUG] Request mode: ${mode}, user_id: ${user_id}, keys: {openai:${!!openaiApiKey}, gemini:${!!geminiApiKey}, openrouter:${!!openrouterApiKey}, serper:${!!serperApiKey}}`);
+
+    // --- High Fidelity OCR Optimization (Google Vision) ---
+    let ocrContext = "";
+    if (pdfImages && pdfImages.length > 0 && geminiApiKey) {
+      // ULTRA-LEAN CAP: Only OCR 5 pages per request to fit 13k limit
+      const imagesToOCR = pdfImages.slice(0, 5);
+      console.info(`Performing Google Vision OCR on ${imagesToOCR.length} images...`);
+      try {
+        const ocrResults = await Promise.all(imagesToOCR.map(async (imgData: string, idx: number) => {
+          try {
+            const [header, base64] = imgData.split(',');
+            const visionUrl = `https://vision.googleapis.com/v1/images:annotate?key=${geminiApiKey}`;
+            const response = await fetch(visionUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                requests: [{
+                  image: { content: base64 },
+                  features: [{ type: "TEXT_DETECTION" }]
+                }]
+              })
+            });
+            const data = await response.json();
+            const text = data.responses?.[0]?.fullTextAnnotation?.text || "";
+            return text ? `[OCR Page ${idx + 1}]\n${text}` : "";
+          } catch (e) {
+            console.error(`OCR Error for page ${idx + 1}:`, e);
+            return "";
+          }
+        }));
+        ocrContext = ocrResults.filter(t => t).join("\n\n");
+        console.info(`OCR completed. Extracted ${ocrContext.length} characters.`);
+      } catch (err) {
+        console.error("Global OCR Error:", err);
+      }
+    }
 
     // --- STATUS CHECK MODE ---
     if (mode === "status") {
@@ -213,12 +249,41 @@ serve(async (req) => {
       );
     }
 
-    if (pdfContext) {
-      systemPrompt += `\n\n[CRITICAL: DOCUMENT CONTENT ATTACHED]
-The user has uploaded a PDF document. Below is the text extracted from that document. You HAVE full access to this content. When the user asks about the document, use this text to answer. Do NOT say you don't have access.
+    if (pdfContext || ocrContext) {
+      const scanInfo = body.scanProgress ? `\n[SCAN STATUS: Page ${body.scanProgress.current} of ${body.scanProgress.total}]` : "";
+      
+      // AGGRESSIVE CONTEXT SLICING: Slice the full text for the current 5-page batch
+      let relevantText = pdfContext || "";
+      if (body.scanProgress) {
+        const startMarker = `[Page ${body.scanProgress.current - 4}]`;
+        const endMarker = `[Page ${body.scanProgress.current + 1}]`;
+        const startIdx = relevantText.indexOf(startMarker);
+        const endIdx = relevantText.indexOf(endMarker);
+        
+        if (startIdx !== -1) {
+          relevantText = relevantText.substring(startIdx, endIdx !== -1 ? endIdx : undefined);
+        }
+      }
+      
+      // ULTRA-LEAN CAP: 2,500 characters to fit 13k token limit
+      relevantText = relevantText.substring(0, 2500);
 
-Document Content:
-${pdfContext.substring(0, 50000)}`;
+      systemPrompt += `\n\n[CRITICAL: DOCUMENT CONTENT ATTACHED]${scanInfo}
+The user has uploaded a PDF document. You are currently in a BATCHED SCANNING MODE.
+
+${ocrContext ? `--- CURRENT BATCH HIGH-FIDELITY OCR (Pages ${body.scanProgress?.current - 4 || 1} to ${body.scanProgress?.current || 5}) ---
+${ocrContext}
+---------------------------------` : ""}
+
+${relevantText ? `--- CURRENT BATCH TEXT EXTRACT ---
+${relevantText}
+---------------------------------` : ""}
+
+INSTRUCTIONS FOR BATCHED SCANNING:
+1. FOCUS: Primarily discuss the content from the "CURRENT BATCH" provided above.
+2. LIMIT: Do NOT summarize the entire document at once. Stay focused on the current chunk to keep the teaching manageable.
+3. COMMAND: At the end of your explanation, if there are more pages left (${body.scanProgress?.current < body.scanProgress?.total}), you MUST ask: "Would you like me to scan the next 5 pages?"
+4. COMPLETION: If you have reached the end of the document (${body.scanProgress?.current >= body.scanProgress?.total}), tell the user: "We have finished scanning the document! Would you like to switch to the 'Test' tab so I can quiz you on what we've learned?"`;
     }
 
     if (mode === "teach") {
@@ -272,24 +337,28 @@ ${pdfContext.substring(0, 50000)}`;
         let requestBody: any;
         let requestUrl: string;
         
-        if (aiModel.provider === "openai") {
-          apiKey = openaiApiKey;
+        if (aiModel.provider === "openai" || aiModel.provider === "openrouter") {
+          apiKey = (aiModel.provider === "openai") ? openaiApiKey : openrouterApiKey;
           if (!apiKey) continue;
+          
+          let messagesToSubmit = [...chatMessages];
+          if (pdfImages && pdfImages.length > 0) {
+            // Find the last user message to attach images to
+            const lastUserIdx = messagesToSubmit.map(m => m.role).lastIndexOf("user");
+            if (lastUserIdx !== -1) {
+              const content: any[] = [{ type: "text", text: messagesToSubmit[lastUserIdx].content }];
+              // CAP: Only send the first 10 images to avoid context overflow
+              pdfImages.slice(0, 10).forEach(img => {
+                content.push({ type: "image_url", image_url: { url: img } });
+              });
+              messagesToSubmit[lastUserIdx] = { ...messagesToSubmit[lastUserIdx], content };
+            }
+          }
+
           requestUrl = aiModel.url;
           requestBody = {
             model: aiModel.model,
-            messages: chatMessages,
-            stream: true,
-            temperature: 0.7,
-            max_tokens: 1000,
-          };
-        } else if (aiModel.provider === "openrouter") {
-          apiKey = openrouterApiKey;
-          if (!apiKey) continue;
-          requestUrl = aiModel.url;
-          requestBody = {
-            model: aiModel.model,
-            messages: chatMessages,
+            messages: messagesToSubmit,
             stream: true,
             temperature: 0.7,
             max_tokens: 1000,
@@ -343,6 +412,21 @@ ${pdfContext.substring(0, 50000)}`;
             const firstUserMsg = geminiContents.find(c => c.role === "user");
             if (firstUserMsg) {
               firstUserMsg.parts[0].text = `System Instructions: ${systemMsg.content}\n\nUser Message: ${firstUserMsg.parts[0].text}`;
+              
+              // Add images to this first user message
+              if (pdfImages && pdfImages.length > 0) {
+                // CAP: Only send the first 10 images to avoid context overflow
+                pdfImages.slice(0, 10).forEach(imgData => {
+                  const [header, base64] = imgData.split(',');
+                  const mimeType = header.split(':')[1].split(';')[0];
+                  firstUserMsg.parts.push({
+                    inline_data: {
+                      mime_type: mimeType,
+                      data: base64
+                    }
+                  } as any);
+                });
+              }
             }
           }
           

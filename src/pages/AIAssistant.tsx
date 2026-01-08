@@ -85,11 +85,13 @@ export default function AIAssistant() {
   const [studyMode, setStudyMode] = useState<StudyMode>('chat');
   const [selectedPdf, setSelectedPdf] = useState<PdfFile | null>(null);
   const [pdfContext, setPdfContext] = useState<string | null>(null);
+  const [pdfImages, setPdfImages] = useState<string[]>([]);
   const [isExtractingPdf, setIsExtractingPdf] = useState(false);
+  const [scanProgress, setScanProgress] = useState<{ current: number; total: number; isScanning: boolean } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { pdfs, isLoading: pdfsLoading, isUploading, uploadPdf, deletePdf, extractPdfContent, refreshPdfs } = usePdfLibrary();
+  const { pdfs, isLoading: pdfsLoading, isUploading, uploadPdf, deletePdf, extractPdfContent, getPdfVisualContext, refreshPdfs } = usePdfLibrary();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -110,17 +112,33 @@ export default function AIAssistant() {
     setMessages([]);
     
     try {
-      const text = await extractPdfContent(pdf);
+      // 1. Get initial text and the first 5 images
+      const [text, images] = await Promise.all([
+        extractPdfContent(pdf),
+        getPdfVisualContext(pdf, 1, 5)
+      ]);
+      
       if (text) {
         setPdfContext(text);
-        toast.success(`PDF loaded! Starting ${mode === 'teach' ? 'learning' : 'test'} session...`);
+        setPdfImages(images || []);
+        
+        // Initialize scan progress (extracting page count from text if possible, or just default)
+        // Note: The Edge Function returns [Page N] tags, we can use that to estimate total
+        const pageCountOffset = text.lastIndexOf('[Page ');
+        const estimatedTotal = pageCountOffset !== -1 
+          ? parseInt(text.substring(pageCountOffset + 6, text.indexOf(']', pageCountOffset))) 
+          : 5;
+          
+        setScanProgress({ current: Math.min(5, estimatedTotal), total: estimatedTotal, isScanning: true });
+        
+        toast.success(`PDF loaded! Starting with first 5 pages...`);
         
         const initialMessage = mode === 'teach' 
-          ? "I've uploaded a PDF document. Please help me learn and understand the content. Start by giving me an overview of what this document covers."
+          ? `I've uploaded a PDF document. Please help me learn and understand the content. Start by giving me an overview of the FIRST 5 PAGES. Then ask me if I'm ready to continue to the next 5 pages.`
           : "I've uploaded a PDF document. Please start testing me on this content. Ask me questions one by one.";
         
         setInput(initialMessage);
-        setTimeout(() => sendMessage(text, mode, initialMessage), 100);
+        setTimeout(() => sendMessage(text, mode, initialMessage, images || []), 100);
       }
     } catch (error) {
       console.error('Error selecting PDF:', error);
@@ -145,8 +163,39 @@ export default function AIAssistant() {
     }
     setSelectedPdf(null);
     setPdfContext(null);
+    setPdfImages([]);
+    setScanProgress(null);
     setStudyMode('chat');
     toast.success('Session cleared');
+  };
+
+  const handleContinueScan = async () => {
+    if (!scanProgress || !selectedPdf) return;
+    
+    const nextStart = scanProgress.current + 1;
+    const nextBatchSize = 5;
+    
+    setIsExtractingPdf(true);
+    try {
+      const images = await getPdfVisualContext(selectedPdf, nextStart, nextBatchSize);
+      const newCurrent = Math.min(scanProgress.current + nextBatchSize, scanProgress.total);
+      
+      setScanProgress({ ...scanProgress, current: newCurrent });
+      setPdfImages(images);
+      
+      const continueMsg = `I'm ready for the next section. Please scan pages ${nextStart} to ${newCurrent} and explain them.`;
+      setInput('');
+      await sendMessage(pdfContext || undefined, studyMode, continueMsg, images);
+      
+      if (newCurrent >= scanProgress.total) {
+          toast.success("Full document scanned!");
+      }
+    } catch (error) {
+      console.error("Continue scan error:", error);
+      toast.error("Failed to scan next pages");
+    } finally {
+      setIsExtractingPdf(false);
+    }
   };
 
   const switchToGeneralChat = () => {
@@ -154,12 +203,13 @@ export default function AIAssistant() {
       
       setSelectedPdf(null);
       setPdfContext(null);
+      setPdfImages([]);
       setStudyMode('chat');
       setMessages(generalMessages);
       setActiveTab('learn');
   };
 
-  const sendMessage = async (contextOverride?: string, modeOverride?: StudyMode, inputOverride?: string) => {
+  const sendMessage = async (contextOverride?: string, modeOverride?: StudyMode, inputOverride?: string, imagesOverride?: string[]) => {
     const messageText = inputOverride || input;
     if (!messageText.trim() || isLoading) return;
 
@@ -190,8 +240,10 @@ export default function AIAssistant() {
           })),
           providerId: selectedModel,
           pdfContext: contextOverride || pdfContext,
+          pdfImages: imagesOverride || pdfImages,
           mode: modeOverride || studyMode,
           userId: user?.id,
+          scanProgress: scanProgress ? { current: scanProgress.current, total: scanProgress.total } : null
         }),
       });
 
@@ -600,7 +652,51 @@ export default function AIAssistant() {
             )}
           </CardContent>
 
-          <div className="border-t border-border/50 p-4 bg-muted/30">
+          <div className="border-t border-border/50 p-4 bg-muted/30 flex flex-col gap-3">
+            {scanProgress && (
+              <div className="flex flex-col gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex items-center justify-between text-xs font-medium">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                    <span className="text-muted-foreground">Document Progress:</span>
+                    <span className="text-accent">{scanProgress.current} / {scanProgress.total} pages</span>
+                  </div>
+                  {scanProgress.current < scanProgress.total && !isLoading && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={handleContinueScan}
+                      className="h-7 text-[10px] uppercase tracking-wider font-bold bg-accent/10 hover:bg-accent/20 text-accent btn-smooth"
+                    >
+                      <RefreshCw className="h-3 w-3 mr-1.5" />
+                      Scan Next 5
+                    </Button>
+                  )}
+                  {scanProgress.current >= scanProgress.total && !isLoading && studyMode === 'teach' && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        setStudyMode('test');
+                        setActiveTab('test');
+                        sendMessage(pdfContext || undefined, 'test', "I've finished reading the document. Please start testing me now!");
+                      }}
+                      className="h-7 text-[10px] uppercase tracking-wider font-bold bg-gold/10 hover:bg-gold/20 text-gold-foreground btn-smooth"
+                    >
+                      <ClipboardCheck className="h-3 w-3 mr-1.5" />
+                      Start Review Test
+                    </Button>
+                  )}
+                </div>
+                <div className="h-1.5 w-full bg-accent/10 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(scanProgress.current / scanProgress.total) * 100}%` }}
+                    className="h-full bg-gradient-to-r from-accent to-gold shadow-[0_0_8px_rgba(var(--accent-rgb),0.5)]"
+                  />
+                </div>
+              </div>
+            )}
             <div className="flex gap-3">
               <Textarea
                 value={input}

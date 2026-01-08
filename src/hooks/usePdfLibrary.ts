@@ -161,11 +161,11 @@ ${result.text}`;
     }
   }, [user]);
 
-  const getPdfVisualContext = async (pdf: PdfFile): Promise<string[]> => {
+  const getPdfVisualContext = async (pdf: PdfFile, startPage: number = 1, count: number = 10): Promise<string[]> => {
     if (!user) return [];
     
     try {
-      console.log('Generating visual context for PDF...');
+      console.log(`Generating visual context for PDF: pages ${startPage} to ${startPage + count - 1}`);
       
       // 1. Download file
       const { data: fileBlob, error: downloadError } = await supabase.storage
@@ -176,19 +176,28 @@ ${result.text}`;
       
       // 2. Load PDF.js (using the version from package.json)
       const pdfjs = await import('pdfjs-dist');
-      pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+      // Use unpkg as it mirrors NPM exactly, resolving the 404 issues with CDNJS
+      const workerUrl = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+      pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
       
       const arrayBuffer = await fileBlob.arrayBuffer();
       const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
       const pdfDoc = await loadingTask.promise;
       
       const images: string[] = [];
-      // Capture first 5 pages as images (sweet spot for context vs payload size)
-      const pagesToRender = Math.min(pdfDoc.numPages, 5);
+      const numPages = pdfDoc.numPages;
       
-      for (let i = 1; i <= pagesToRender; i++) {
+      // Calculate range with safety bounds
+      const actualStart = Math.max(1, Math.min(startPage, numPages));
+      const actualEnd = Math.min(actualStart + count - 1, numPages);
+      
+      console.log(`Scanning pages ${actualStart} to ${actualEnd} (Total: ${numPages})...`);
+      
+      for (let i = actualStart; i <= actualEnd; i++) {
         const page = await pdfDoc.getPage(i);
-        const viewport = page.getViewport({ scale: 1.5 }); // Good balance of quality/size
+        
+        // ULTRA-LEAN OPTIMIZATION: Smallest usable resolution to stay under tiny 13k token limits
+        const viewport = page.getViewport({ scale: 0.5 });
         
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
@@ -202,8 +211,8 @@ ${result.text}`;
           viewport: viewport
         }).promise;
         
-        // Convert to low-quality JPEG to save on transit data
-        images.push(canvas.toDataURL('image/jpeg', 0.6));
+        // Convert to lowest-quality JPEG (0.2) to minimize token footprint
+        images.push(canvas.toDataURL('image/jpeg', 0.2));
       }
       
       console.log(`Generated ${images.length} page images for visual context`);
