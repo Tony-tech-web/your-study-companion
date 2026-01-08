@@ -1,4 +1,4 @@
-project_id = "phxvizvqkueddelnseam"
+project_id = "kmthayzaarwoivnjwxpj"
 
 [functions.ai-chat]
 verify_jwt = false
@@ -7,4 +7,16 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.generate-study-tools]
+verify_jwt = false
+
+[functions.research-search]
+verify_jwt = false
+
+[functions.get-study-tips]
+verify_jwt = false
+
+[functions.update-user-stats]
+verify_jwt = false
+
+[functions.get-leaderboard]
 verify_jwt = false

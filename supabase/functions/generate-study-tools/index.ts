@@ -6,7 +6,94 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+// AI Models with fallback - Try OpenAI first, then Gemini
+async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: string; openrouter?: string }) {
+  const errors: string[] = [];
+  
+  // Try OpenRouter first (if configured)
+  if (apiKeys.openrouter) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKeys.openrouter}`,
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-4-turbo",
+          messages,
+          max_tokens: 8000,
+        }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        return data.choices?.[0]?.message?.content || "";
+      }
+      errors.push(`OpenRouter: ${res.status}`);
+    } catch (e) {
+      errors.push(`OpenRouter: ${e}`);
+    }
+  }
+  
+  // Try OpenAI directly
+  if (apiKeys.openai) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKeys.openai}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4-turbo-preview",
+          messages,
+          max_tokens: 8000,
+        }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        return data.choices?.[0]?.message?.content || "";
+      }
+      errors.push(`OpenAI: ${res.status}`);
+    } catch (e) {
+      errors.push(`OpenAI: ${e}`);
+    }
+  }
+  
+  // Try Gemini
+  if (apiKeys.gemini) {
+    try {
+      const geminiMessages = messages.filter(m => m.role !== "system").map(m => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }]
+      }));
+      
+      const systemInstruction = messages.find(m => m.role === "system");
+      
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKeys.gemini}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: geminiMessages,
+          systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction.content }] } : undefined,
+          generationConfig: { maxOutputTokens: 8000 },
+        }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      }
+      errors.push(`Gemini: ${res.status}`);
+    } catch (e) {
+      errors.push(`Gemini: ${e}`);
+    }
+  }
+  
+  throw new Error(`All AI providers failed: ${errors.join(", ")}`);
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -16,15 +103,10 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
+    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    const openrouterApiKey = Deno.env.get("OPENROUTER_API_KEY");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    if (!lovableApiKey) {
-      return new Response(
-        JSON.stringify({ error: "AI service not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
 
     const { userId, materialId, pdfContent, toolType, studyFocus } = await req.json();
 
@@ -55,10 +137,10 @@ ${pdfContent.substring(0, 30000)}`;
         break;
 
       case "flashcards":
-        systemPrompt = `You are an expert flashcard creator. Generate effective flashcards for studying and memorization.`;
+        systemPrompt = `You are an expert flashcard creator. Generate effective flashcards for studying and memorization. Return ONLY a JSON array with no additional text.`;
         userPrompt = `Create flashcards from this content. ${studyFocus ? `Focus on: ${studyFocus}` : ''}
 
-Return as a JSON array with this format:
+Return ONLY a valid JSON array with this exact format (no markdown, no explanation):
 [
   {"front": "Question or term", "back": "Answer or definition"},
   ...
@@ -71,17 +153,17 @@ ${pdfContent.substring(0, 30000)}`;
         break;
 
       case "quiz":
-        systemPrompt = `You are an expert quiz generator. Create challenging but fair quiz questions to test understanding.`;
+        systemPrompt = `You are an expert quiz generator. Create challenging but fair quiz questions to test understanding. Return ONLY a JSON array with no additional text.`;
         userPrompt = `Create a quiz from this content. ${studyFocus ? `Focus on: ${studyFocus}` : ''}
 
-Return as a JSON array with this format:
+Return ONLY a valid JSON array with this exact format (no markdown, no explanation):
 [
   {
     "question": "Question text",
-    "type": "multiple_choice" | "true_false" | "short_answer",
-    "options": ["A", "B", "C", "D"] (for multiple choice only),
+    "type": "multiple_choice",
+    "options": ["A", "B", "C", "D"],
     "correct_answer": "The correct answer",
-    "explanation": "Brief explanation of why this is correct"
+    "explanation": "Brief explanation"
   },
   ...
 ]
@@ -113,39 +195,21 @@ ${pdfContent.substring(0, 30000)}`;
         );
     }
 
-    const aiResponse = await fetch(AI_GATEWAY_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${lovableApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
-        max_tokens: 8000,
-      }),
+    const messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt }
+    ];
+
+    const generatedContent = await callAI(messages, {
+      openai: openaiApiKey,
+      gemini: geminiApiKey,
+      openrouter: openrouterApiKey,
     });
-
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error("AI generation failed:", errorText);
-      return new Response(
-        JSON.stringify({ error: "Failed to generate study tools" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const aiData = await aiResponse.json();
-    const generatedContent = aiData.choices?.[0]?.message?.content || "";
 
     // Parse JSON for flashcards and quiz
     let parsedContent = generatedContent;
     if (toolType === "flashcards" || toolType === "quiz") {
       try {
-        // Extract JSON from the response
         const jsonMatch = generatedContent.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
           parsedContent = JSON.parse(jsonMatch[0]);
