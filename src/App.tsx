@@ -21,6 +21,8 @@ import Leaderboard from "./pages/Leaderboard";
 import Tips from "./pages/Tips";
 import NotFound from "./pages/NotFound";
 
+// Note: APIStatus is now a modal component, not a page
+
 const queryClient = new QueryClient();
 
 const App = () => (
