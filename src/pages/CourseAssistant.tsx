@@ -4,9 +4,9 @@ import { BookOpen, Upload, Library, Sparkles, FileText, Trash2 } from 'lucide-re
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePdfLibrary } from '@/hooks/usePdfLibrary';
+import { StudyToolsModal } from '@/components/StudyToolsModal';
 import { toast } from 'sonner';
 
 export default function CourseAssistant() {
@@ -14,6 +14,8 @@ export default function CourseAssistant() {
   const [description, setDescription] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const { pdfs, isLoading, isUploading, uploadPdf, deletePdf } = usePdfLibrary();
+  const [studyToolsOpen, setStudyToolsOpen] = useState(false);
+  const [selectedPdf, setSelectedPdf] = useState<{ id: string; name: string; content?: string } | null>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -42,6 +44,11 @@ export default function CourseAssistant() {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  const openStudyTools = (pdf: { id: string; file_name: string }) => {
+    setSelectedPdf({ id: pdf.id, name: pdf.file_name });
+    setStudyToolsOpen(true);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -53,7 +60,7 @@ export default function CourseAssistant() {
       </div>
 
       <Tabs defaultValue="upload" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-6">
+        <TabsList className="grid w-full grid-cols-2 mb-6">
           <TabsTrigger value="upload" className="flex items-center gap-2">
             <Upload className="h-4 w-4" />
             Upload Materials
@@ -61,10 +68,6 @@ export default function CourseAssistant() {
           <TabsTrigger value="library" className="flex items-center gap-2">
             <Library className="h-4 w-4" />
             My Library
-          </TabsTrigger>
-          <TabsTrigger value="tools" className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4" />
-            Study Tools
           </TabsTrigger>
         </TabsList>
 
@@ -164,6 +167,9 @@ export default function CourseAssistant() {
           <Card className="glass-card">
             <CardHeader>
               <CardTitle>My Library</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Click on a document to generate study tools
+              </p>
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -187,7 +193,8 @@ export default function CourseAssistant() {
                       key={pdf.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="flex items-center justify-between p-4 glass-card rounded-xl hover-lift"
+                      className="flex items-center justify-between p-4 glass-card rounded-xl hover-lift cursor-pointer group"
+                      onClick={() => openStudyTools(pdf)}
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
@@ -200,14 +207,31 @@ export default function CourseAssistant() {
                           </p>
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deletePdf(pdf)}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openStudyTools(pdf);
+                          }}
+                        >
+                          <Sparkles className="h-4 w-4 mr-1" />
+                          Study Tools
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deletePdf(pdf);
+                          }}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </motion.div>
                   ))}
                 </div>
@@ -215,39 +239,16 @@ export default function CourseAssistant() {
             </CardContent>
           </Card>
         </TabsContent>
-
-        <TabsContent value="tools">
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-accent" />
-                Study Tools
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { title: 'Generate Summary', description: 'Create concise summaries from your materials' },
-                  { title: 'Create Flashcards', description: 'Auto-generate flashcards for quick review' },
-                  { title: 'Practice Quiz', description: 'Test your knowledge with AI-generated quizzes' },
-                  { title: 'Key Concepts', description: 'Extract important concepts and definitions' },
-                ].map((tool, index) => (
-                  <motion.div
-                    key={tool.title}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: index * 0.1 }}
-                    className="glass-card p-4 rounded-xl hover-lift cursor-pointer"
-                  >
-                    <h3 className="font-semibold mb-1">{tool.title}</h3>
-                    <p className="text-sm text-muted-foreground">{tool.description}</p>
-                  </motion.div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
+
+      {/* Study Tools Modal */}
+      <StudyToolsModal
+        open={studyToolsOpen}
+        onOpenChange={setStudyToolsOpen}
+        pdfId={selectedPdf?.id}
+        pdfName={selectedPdf?.name}
+        pdfContent={selectedPdf?.content}
+      />
     </div>
   );
 }

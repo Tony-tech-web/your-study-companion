@@ -16,10 +16,12 @@ import {
   History,
   Sun,
   Moon,
-  Zap
+  Trophy,
+  Lightbulb
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/hooks/useTheme';
+import { APIStatusModal } from '@/components/APIStatusModal';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -33,6 +35,8 @@ const mainNavItems = [
   { icon: Calendar, label: 'Study Planner', description: 'AI-powered personalized study...', path: '/dashboard/planner' },
   { icon: BookOpen, label: 'Course Assistant', description: 'Upload materials & generate s...', path: '/dashboard/courses' },
   { icon: Search, label: 'Research Assistant', description: 'AI-powered academic research', path: '/dashboard/research' },
+  { icon: Trophy, label: 'Leaderboard', description: 'Rankings & achievements', path: '/dashboard/leaderboard' },
+  { icon: Lightbulb, label: 'Study Tips', description: 'AI-powered study guidance', path: '/dashboard/tips' },
   { icon: History, label: 'History', description: 'View your past interactions', path: '/dashboard/history' },
 ];
 
@@ -167,18 +171,8 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
             </span>
           </button>
 
-          {/* API Status */}
-          <Link
-            to="/dashboard/api-status"
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 hover:bg-sidebar-accent/50"
-          >
-            <div className="w-8 h-8 rounded-lg bg-sidebar-accent/30 flex items-center justify-center">
-              <Zap className="h-4 w-4 text-sidebar-foreground/70" />
-            </div>
-            <span className="text-sm font-medium text-sidebar-foreground/80">
-              API Status
-            </span>
-          </Link>
+          {/* API Status Modal */}
+          <APIStatusModal />
 
           {/* User Profile */}
           <div className="flex items-center gap-3 px-3 py-3 rounded-lg bg-sidebar-accent/20 mt-2">

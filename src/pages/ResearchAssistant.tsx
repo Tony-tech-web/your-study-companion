@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Bookmark, ExternalLink, Loader2 } from 'lucide-react';
+import { Search, Bookmark, ExternalLink, Loader2, Sparkles, Lightbulb, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface SearchResult {
   id: string;
@@ -15,11 +16,63 @@ interface SearchResult {
   source: string;
 }
 
+interface AIInsight {
+  summary: string;
+  projectIdeas: string[];
+  relatedTopics: string[];
+}
+
 export default function ResearchAssistant() {
+  const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [aiInsights, setAiInsights] = useState<AIInsight | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [savedArticles, setSavedArticles] = useState<SearchResult[]>([]);
+  const [isLoadingLibrary, setIsLoadingLibrary] = useState(true);
+
+  // Load saved articles from database
+  useEffect(() => {
+    const loadSavedArticles = async () => {
+      if (!user) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('research_history')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (error) throw error;
+
+        if (data) {
+          const articles: SearchResult[] = data
+            .filter(item => item.results)
+            .flatMap(item => {
+              const results = item.results as any;
+              if (Array.isArray(results)) {
+                return results.map((r: any, idx: number) => ({
+                  id: `${item.id}-${idx}`,
+                  title: r.title || item.query,
+                  snippet: r.snippet || '',
+                  url: r.url || '#',
+                  source: r.source || 'Saved Research'
+                }));
+              }
+              return [];
+            });
+          setSavedArticles(articles.slice(0, 10));
+        }
+      } catch (error) {
+        console.error('Error loading saved articles:', error);
+      } finally {
+        setIsLoadingLibrary(false);
+      }
+    };
+
+    loadSavedArticles();
+  }, [user]);
 
   const handleSearch = async () => {
     if (!query.trim()) {
@@ -28,47 +81,21 @@ export default function ResearchAssistant() {
     }
 
     setIsSearching(true);
+    setAiInsights(null);
     
     try {
-      const { data, error } = await supabase.functions.invoke('ai-chat', {
-        body: {
-          messages: [{ role: 'user', content: query }],
-          mode: 'research',
-          model: 'gemini-flash',
-        },
+      const { data, error } = await supabase.functions.invoke('research-search', {
+        body: { query, userId: user?.id },
       });
 
       if (error) throw error;
 
-      // For now, create mock results based on the query
-      // In a real implementation, this would use a search API
-      const mockResults: SearchResult[] = [
-        {
-          id: '1',
-          title: `Research on ${query}`,
-          snippet: `Comprehensive research findings about ${query}. This article explores various aspects and provides detailed analysis...`,
-          url: '#',
-          source: 'Academic Journal',
-        },
-        {
-          id: '2',
-          title: `${query}: A Literature Review`,
-          snippet: `This literature review covers the key studies and findings related to ${query} over the past decade...`,
-          url: '#',
-          source: 'Research Database',
-        },
-        {
-          id: '3',
-          title: `Understanding ${query}`,
-          snippet: `An educational resource that breaks down the fundamentals of ${query} for students and researchers...`,
-          url: '#',
-          source: 'Educational Platform',
-        },
-      ];
-
-      setResults(mockResults);
-      toast.success('Search completed!');
-    } catch (error) {
+      if (data) {
+        setResults(data.results || []);
+        setAiInsights(data.insights || null);
+        toast.success('Research complete!');
+      }
+    } catch (error: any) {
       console.error('Search error:', error);
       toast.error('Search failed. Please try again.');
     } finally {
@@ -76,13 +103,32 @@ export default function ResearchAssistant() {
     }
   };
 
-  const saveArticle = (article: SearchResult) => {
+  const saveArticle = async (article: SearchResult) => {
+    if (!user) {
+      toast.error('Please sign in to save articles');
+      return;
+    }
+
     if (savedArticles.find(a => a.id === article.id)) {
       toast.error('Article already saved');
       return;
     }
-    setSavedArticles([...savedArticles, article]);
-    toast.success('Article saved to library');
+
+    try {
+      const { error } = await supabase.from('research_history').insert({
+        user_id: user.id,
+        query: article.title,
+        results: [{ title: article.title, snippet: article.snippet, url: article.url, source: article.source }],
+      });
+
+      if (error) throw error;
+
+      setSavedArticles([article, ...savedArticles]);
+      toast.success('Article saved to library');
+    } catch (error) {
+      console.error('Save error:', error);
+      toast.error('Failed to save article');
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -98,20 +144,20 @@ export default function ResearchAssistant() {
           <Search className="h-8 w-8 text-accent" />
           Research Assistant
         </h1>
-        <p className="text-muted-foreground">AI-powered academic research and resource discovery</p>
+        <p className="text-muted-foreground">AI-powered project discovery & research insights</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Search Section */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
           <Card className="glass-card">
             <CardHeader>
-              <CardTitle>Find Scholarly Resources</CardTitle>
+              <CardTitle>Discover Projects & Research</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex gap-2">
                 <Input
-                  placeholder="Enter your research topic or question..."
+                  placeholder="Search for projects, research topics, or ideas..."
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={handleKeyDown}
@@ -133,53 +179,120 @@ export default function ResearchAssistant() {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Searches academic journals, publications, and scholarly resources
+                Searches the web for projects, generates unique ideas, and provides AI insights
               </p>
-
-              {/* Results */}
-              {results.length > 0 && (
-                <div className="space-y-3 mt-6">
-                  <h3 className="font-semibold">Search Results</h3>
-                  {results.map((result, index) => (
-                    <motion.div
-                      key={result.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      className="glass-card p-4 rounded-xl hover-lift"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <h4 className="font-medium text-accent hover:underline cursor-pointer">
-                            {result.title}
-                          </h4>
-                          <p className="text-sm text-muted-foreground mt-1">{result.snippet}</p>
-                          <span className="text-xs text-muted-foreground/70">{result.source}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => saveArticle(result)}
-                            className="hover:text-accent"
-                          >
-                            <Bookmark className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="hover:text-accent"
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
             </CardContent>
           </Card>
+
+          {/* AI Insights */}
+          {aiInsights && (
+            <Card className="glass-card border-accent/30">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-accent" />
+                  AI Insights
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <h4 className="font-medium text-sm mb-2">Summary</h4>
+                  <p className="text-sm text-muted-foreground">{aiInsights.summary}</p>
+                </div>
+
+                {aiInsights.projectIdeas.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                      <Lightbulb className="h-4 w-4 text-accent" />
+                      Unique Project Ideas
+                    </h4>
+                    <ul className="space-y-2">
+                      {aiInsights.projectIdeas.map((idea, idx) => (
+                        <motion.li
+                          key={idx}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: idx * 0.1 }}
+                          className="text-sm p-2 bg-accent/10 rounded-lg"
+                        >
+                          {idea}
+                        </motion.li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {aiInsights.relatedTopics.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2">Related Topics</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {aiInsights.relatedTopics.map((topic, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-1 text-xs bg-muted/50 rounded-full cursor-pointer hover:bg-muted"
+                          onClick={() => setQuery(topic)}
+                        >
+                          {topic}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Results */}
+          {results.length > 0 && (
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle>Search Results</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {results.map((result, index) => (
+                  <motion.div
+                    key={result.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    className="glass-card p-4 rounded-xl hover-lift"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <a 
+                          href={result.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="font-medium text-accent hover:underline"
+                        >
+                          {result.title}
+                        </a>
+                        <p className="text-sm text-muted-foreground mt-1">{result.snippet}</p>
+                        <span className="text-xs text-muted-foreground/70">{result.source}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => saveArticle(result)}
+                          className="hover:text-accent"
+                        >
+                          <Bookmark className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="hover:text-accent"
+                          onClick={() => window.open(result.url, '_blank')}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Saved Library */}
@@ -192,20 +305,26 @@ export default function ResearchAssistant() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {savedArticles.length === 0 ? (
+              {isLoadingLibrary ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-accent" />
+                </div>
+              ) : savedArticles.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">
                   Save articles to your library for quick access.
                 </p>
               ) : (
                 <div className="space-y-2">
                   {savedArticles.map((article) => (
-                    <div
+                    <motion.div
                       key={article.id}
-                      className="p-3 bg-muted/30 rounded-lg"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="p-3 bg-muted/30 rounded-lg group"
                     >
                       <p className="text-sm font-medium truncate">{article.title}</p>
                       <p className="text-xs text-muted-foreground">{article.source}</p>
-                    </div>
+                    </motion.div>
                   ))}
                 </div>
               )}
