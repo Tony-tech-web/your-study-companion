@@ -11,7 +11,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="prose prose-invert prose-sm max-w-none 
+      className="prose prose-invert prose-sm max-w-none .
                  prose-headings:font-display prose-headings:font-bold prose-headings:tracking-tight
                  prose-h1:text-2xl prose-h1:bg-gradient-to-r prose-h1:from-accent prose-h1:to-gold prose-h1:bg-clip-text prose-h1:text-transparent prose-h1:mb-4
                  prose-h2:text-xl prose-h2:text-accent prose-h2:mt-6 prose-h2:mb-3
