@@ -85,9 +85,12 @@ export default function ResearchAssistant() {
     
     try {
 <<<<<<< HEAD
+<<<<<<< HEAD
       const { data, error } = await supabase.functions.invoke('research-search', {
         body: { query, userId: user?.id },
 =======
+=======
+>>>>>>> c3ab227 (Resolve merge conflicts and integrate origin/main)
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
@@ -104,11 +107,17 @@ export default function ResearchAssistant() {
           mode: 'research',
           providerId: 'google', // Use Gemini Flash as configured in the function
         },
+<<<<<<< HEAD
 >>>>>>> 6a0461f (ai is finally working with reasarech and pdf)
+=======
+      const { data, error } = await supabase.functions.invoke('research-search', {
+        body: { query, userId: user?.id },
+>>>>>>> c3ab227 (Resolve merge conflicts and integrate origin/main)
       });
 
       if (error) throw error;
 
+<<<<<<< HEAD
 <<<<<<< HEAD
       if (data) {
         setResults(data.results || []);
@@ -117,6 +126,8 @@ export default function ResearchAssistant() {
       }
     } catch (error: any) {
 =======
+=======
+>>>>>>> c3ab227 (Resolve merge conflicts and integrate origin/main)
       // Extract results from the response
       if (data && data.citations) {
         const researchResults: SearchResult[] = data.citations.map((cite: any) => ({
@@ -133,7 +144,16 @@ export default function ResearchAssistant() {
       }
       toast.success('Search completed!');
     } catch (error) {
+<<<<<<< HEAD
 >>>>>>> 6a0461f (ai is finally working with reasarech and pdf)
+=======
+      if (data) {
+        setResults(data.results || []);
+        setAiInsights(data.insights || null);
+        toast.success('Research complete!');
+      }
+    } catch (error: any) {
+>>>>>>> c3ab227 (Resolve merge conflicts and integrate origin/main)
       console.error('Search error:', error);
       toast.error('Search failed. Please try again.');
     } finally {
