@@ -8,17 +8,15 @@ import { Suspense, lazy } from "react";
 import { Loader2 } from "lucide-react";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-<<<<<<< HEAD
+
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 
-=======
 import PageLoading from "@/components/layout/PageLoading";
 
 // Lazy-load page components
 const Index = lazy(() => import("./pages/Index"));
 const Auth = lazy(() => import("./pages/Auth"));
->>>>>>> 6a0461f (ai is finally working with reasarech and pdf)
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Profile = lazy(() => import("./pages/Profile"));
 const AIAssistant = lazy(() => import("./pages/AIAssistant"));
@@ -48,11 +46,8 @@ const App = () => (
       <Sonner />
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
-<<<<<<< HEAD
           <Suspense fallback={<RouteLoading />}>
-=======
           <Suspense fallback={<PageLoading />}>
->>>>>>> 6a0461f (ai is finally working with reasarech and pdf)
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
