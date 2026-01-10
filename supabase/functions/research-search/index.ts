@@ -59,18 +59,30 @@ async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: stri
   // Try Gemini
   if (apiKeys.gemini) {
     try {
-      const geminiMessages = messages.filter(m => m.role !== "system").map(m => ({
+      const systemPromptText = messages.find(m => m.role === "system")?.content;
+      const nonSystem = messages.filter(m => m.role !== "system");
+
+      const merged = [...nonSystem];
+      if (systemPromptText) {
+        if (merged.length === 0) {
+          merged.push({ role: "user", content: String(systemPromptText) });
+        } else if (merged[0].role === "user") {
+          merged[0] = { ...merged[0], content: `${systemPromptText}\n\n${merged[0].content}`.trim() };
+        } else {
+          merged.unshift({ role: "user", content: String(systemPromptText) });
+        }
+      }
+
+      const geminiMessages = merged.map(m => ({
         role: m.role === "assistant" ? "model" : "user",
         parts: [{ text: m.content }]
       }));
-      const systemInstruction = messages.find(m => m.role === "system");
-      
+
       const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKeys.gemini}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: geminiMessages,
-          systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction.content }] } : undefined,
           generationConfig: { maxOutputTokens: 4000 },
         }),
       });
