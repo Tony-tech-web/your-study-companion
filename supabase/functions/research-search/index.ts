@@ -125,69 +125,96 @@ serve(async (req) => {
     let aiInsights = "";
     let projectIdeas: any[] = [];
 
-    // Use Serper API for web search
+    // Use Serper API for web search - search for EXISTING projects
     if (serperApiKey) {
       try {
-        // Search for academic/research content
-        const searchResponse = await fetch("https://google.serper.dev/search", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-KEY": serperApiKey,
-          },
-          body: JSON.stringify({
-            q: `${query} research project academic`,
-            num: 10,
-          }),
-        });
+        // Search specifically for existing projects on GitHub, research papers, and implementations
+        const searchQueries = [
+          `${query} github project repository`,
+          `${query} research paper implementation`,
+        ];
 
-        if (searchResponse.ok) {
-          const searchData = await searchResponse.json();
-          
-          // Process organic results
-          if (searchData.organic) {
-            searchResults = searchData.organic.map((item: any, index: number) => ({
-              id: `result-${index}`,
-              title: item.title,
-              snippet: item.snippet,
-              url: item.link,
-              source: new URL(item.link).hostname.replace('www.', ''),
-              position: item.position,
-            }));
+        for (const searchQuery of searchQueries) {
+          const searchResponse = await fetch("https://google.serper.dev/search", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-API-KEY": serperApiKey,
+            },
+            body: JSON.stringify({
+              q: searchQuery,
+              num: 8,
+            }),
+          });
+
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            
+            // Process organic results
+            if (searchData.organic) {
+              const newResults = searchData.organic.map((item: any, index: number) => ({
+                id: `result-${searchResults.length + index}`,
+                title: item.title,
+                snippet: item.snippet,
+                url: item.link,
+                source: new URL(item.link).hostname.replace('www.', ''),
+                position: item.position,
+                isGitHub: item.link.includes('github.com'),
+              }));
+              searchResults.push(...newResults);
+            }
           }
         }
+
+        // Deduplicate by URL
+        const seen = new Set();
+        searchResults = searchResults.filter(r => {
+          if (seen.has(r.url)) return false;
+          seen.add(r.url);
+          return true;
+        });
+
+        // Prioritize GitHub results
+        searchResults.sort((a, b) => {
+          if (a.isGitHub && !b.isGitHub) return -1;
+          if (!a.isGitHub && b.isGitHub) return 1;
+          return 0;
+        });
+
+        searchResults = searchResults.slice(0, 12);
       } catch (e) {
         console.error("Serper search error:", e);
       }
     }
 
-    // Generate AI insights and unique project ideas
+    // Generate AI insights focusing on EXISTING projects found
     const aiMessages = [
       {
         role: "system",
-        content: `You are an academic research advisor. Based on search results about a topic, provide:
-1. Key insights and trends in this research area
-2. 3-5 unique project ideas that haven't been widely explored
-3. Potential gaps in current research
+        content: `You are a research assistant that helps students find EXISTING projects and implementations. Based on the search results, provide:
+1. A summary of the existing projects found
+2. Key features and approaches used in these projects
+3. Suggestions for how to build upon or improve these existing solutions
 
 Return as JSON with this format:
 {
-  "insights": "Your analysis of the research landscape...",
+  "insights": "Summary of existing projects found...",
   "projectIdeas": [
-    {"title": "Project Title", "description": "Brief description", "uniqueness": "Why this is unique/underexplored"},
+    {"title": "Enhancement Idea", "description": "How to improve on existing work", "basedOn": "Which existing project this builds upon"},
     ...
   ],
-  "gaps": ["Gap 1", "Gap 2", ...]
+  "existingProjects": ["Project 1 name", "Project 2 name", ...],
+  "gaps": ["What's missing in current solutions", ...]
 }`
       },
       {
         role: "user",
         content: `Research topic: "${query}"
 
-Search results summary:
-${searchResults.slice(0, 5).map(r => `- ${r.title}: ${r.snippet}`).join('\n')}
+Existing projects and implementations found:
+${searchResults.slice(0, 8).map(r => `- ${r.title} (${r.source}): ${r.snippet}`).join('\n')}
 
-Provide insights, unique project ideas, and research gaps.`
+Analyze these existing projects and provide insights on what has been built and how to improve upon them.`
       }
     ];
 

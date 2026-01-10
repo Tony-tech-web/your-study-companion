@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { extractPdfText, PdfExtractionResult } from '@/lib/pdfExtractor';
 
 export interface PdfFile {
   id: string;
@@ -107,34 +108,58 @@ export function usePdfLibrary() {
     }
   };
 
-  const extractPdfContent = async (pdf: PdfFile): Promise<string | null> => {
+  const extractPdfContent = useCallback(async (
+    pdf: PdfFile,
+    onProgress?: (processed: number, total: number) => void
+  ): Promise<string | null> => {
     if (!user) return null;
 
     try {
-      console.log('Parsing PDF via Edge Function:', pdf.file_path);
-      
-      const { data, error } = await supabase.functions.invoke('parse-pdf', {
-        body: { 
-          filePath: pdf.file_path,
-          userId: user.id 
-        }
-      });
+      console.log('Extracting PDF with client-side OCR:', pdf.file_path);
 
-      if (error) {
-        console.error('Edge function error:', error);
-        throw error;
+      // Download the PDF from storage
+      const { data: fileData, error: downloadError } = await supabase.storage
+        .from('student-pdfs')
+        .download(pdf.file_path);
+
+      if (downloadError || !fileData) {
+        console.error('Download error:', downloadError);
+        throw new Error('Failed to download PDF');
       }
 
-      const text = data.text;
-      console.log('Text extracted, length:', text.length);
+      // Extract text using pdfjs-dist (client-side OCR)
+      const result: PdfExtractionResult = await extractPdfText(fileData, {
+        maxPages: 50, // Process up to 50 pages
+        pagesPerBatch: 5, // Process 5 pages at a time for memory efficiency
+        onProgress,
+      });
 
-      return text;
+      console.log(`Extracted ${result.pagesProcessed}/${result.pageCount} pages, text length: ${result.text.length}`);
+
+      // Log activity
+      try {
+        await supabase.from('learning_activity').insert({
+          user_id: user.id,
+          activity_type: 'pdf_extraction',
+          activity_count: result.pagesProcessed,
+        });
+      } catch (e) {
+        console.log('Activity logging skipped');
+      }
+
+      // Build context with summary info
+      const contextText = `[DOCUMENT: ${pdf.file_name}]
+[Pages: ${result.pagesProcessed} of ${result.pageCount}]
+
+${result.text}`;
+
+      return contextText;
     } catch (error) {
       console.error('Error extracting PDF:', error);
       toast.error('Failed to extract PDF content');
       return null;
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     fetchPdfs();
