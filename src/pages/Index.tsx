@@ -1,9 +1,22 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { 
-  Bot, BookOpen, GraduationCap, Sparkles, ChevronRight, 
-  Brain, BarChart3, Users, Zap, Trophy, Clock, ArrowRight
+import { useTheme } from 'next-themes';
+import {
+  Bot,
+  BookOpen,
+  GraduationCap,
+  Sparkles,
+  ChevronRight,
+  Brain,
+  BarChart3,
+  Users,
+  Zap,
+  Trophy,
+  Clock,
+  ArrowRight,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -48,6 +61,10 @@ const stats = [
 ];
 
 export default function Index() {
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
+  const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
+
   return (
     <div className="min-h-screen bg-background overflow-hidden">
       {/* Navigation */}
@@ -60,7 +77,19 @@ export default function Index() {
               </div>
               <span className="font-display text-xl font-bold">Elizade AI</span>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
+              <Button
+                variant="ghost"
+                className="btn-smooth"
+                onClick={toggleTheme}
+                aria-label="Toggle theme"
+              >
+                {isDark ? (
+                  <Sun className="h-4 w-4" />
+                ) : (
+                  <Moon className="h-4 w-4" />
+                )}
+              </Button>
               <Link to="/auth">
                 <Button variant="ghost" className="btn-smooth">
                   Sign In
@@ -76,6 +105,7 @@ export default function Index() {
           </div>
         </div>
       </nav>
+
 
       {/* Hero Section */}
       <section className="relative pt-32 pb-20 px-4 sm:px-6 lg:px-8">

@@ -197,25 +197,38 @@ serve(async (req) => {
           // Gemini uses alt=sse for streaming
           requestUrl = `${aiModel.url}?key=${apiKey}&alt=sse`;
           
-          // Convert OpenAI format to Gemini format
-          const geminiContents = chatMessages
-            .filter(m => m.role !== "system")
-            .map(m => ({
-              role: m.role === "assistant" ? "model" : "user",
-              parts: [{ text: String(m.content) }]
-            }));
-          
-          const systemInstruction = chatMessages.find(m => m.role === "system");
-          
+          // Convert OpenAI format to Gemini format.
+          // Gemini REST API does not accept a "system" role, and the previous
+          // "systemInstruction" field is currently rejected by the endpoint.
+          // To stay compatible, we merge the system prompt into the first user message.
+          const systemPromptText = chatMessages.find(m => m.role === "system")?.content;
+          const nonSystemMessages = chatMessages.filter(m => m.role !== "system");
+
+          const mergedMessages = [...nonSystemMessages];
+          if (systemPromptText) {
+            if (mergedMessages.length === 0) {
+              mergedMessages.push({ role: "user", content: String(systemPromptText) });
+            } else if (mergedMessages[0].role === "user") {
+              mergedMessages[0] = {
+                ...mergedMessages[0],
+                content: `${systemPromptText}\n\n${mergedMessages[0].content}`.trim(),
+              };
+            } else {
+              mergedMessages.unshift({ role: "user", content: String(systemPromptText) });
+            }
+          }
+
+          const geminiContents = mergedMessages.map(m => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: [{ text: String(m.content) }]
+          }));
+
           requestBody = {
             contents: geminiContents,
-            systemInstruction: systemInstruction ? {
-              parts: [{ text: String(systemInstruction.content) }]
-            } : undefined,
             generationConfig: {
               temperature: 0.7,
               maxOutputTokens: 2048, // Reduced for faster response
-            }
+            },
           };
         } else {
           console.error("Unknown provider:", aiModel.provider);
