@@ -1,4 +1,4 @@
-import { Bot, Upload, Trash2, RefreshCw, Library } from 'lucide-react';
+import { Bot, Upload, Trash2, RefreshCw, Library, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PdfFile } from '@/hooks/usePdfLibrary';
 
