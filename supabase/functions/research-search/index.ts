@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// AI call helper for insights and project ideas
+// AI call helper with fallback
 async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: string; openrouter?: string }) {
   // Try OpenRouter first
   if (apiKeys.openrouter) {
@@ -18,7 +18,7 @@ async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: stri
           "Authorization": `Bearer ${apiKeys.openrouter}`,
         },
         body: JSON.stringify({
-          model: "openai/gpt-4-turbo",
+          model: "google/gemini-2.0-flash-001",
           messages,
           max_tokens: 4000,
         }),
@@ -32,35 +32,11 @@ async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: stri
     }
   }
   
-  // Try OpenAI
-  if (apiKeys.openai) {
-    try {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKeys.openai}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4-turbo-preview",
-          messages,
-          max_tokens: 4000,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data.choices?.[0]?.message?.content || "";
-      }
-    } catch (e) {
-      console.error("OpenAI error:", e);
-    }
-  }
-  
   // Try Gemini
   if (apiKeys.gemini) {
     try {
-      const systemPromptText = messages.find(m => m.role === "system")?.content;
-      const nonSystem = messages.filter(m => m.role !== "system");
+      const systemPromptText = messages.find((m: any) => m.role === "system")?.content;
+      const nonSystem = messages.filter((m: any) => m.role !== "system");
 
       const merged = [...nonSystem];
       if (systemPromptText) {
@@ -73,12 +49,12 @@ async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: stri
         }
       }
 
-      const geminiMessages = merged.map(m => ({
+      const geminiMessages = merged.map((m: any) => ({
         role: m.role === "assistant" ? "model" : "user",
         parts: [{ text: m.content }]
       }));
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKeys.gemini}`, {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKeys.gemini}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -92,6 +68,30 @@ async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: stri
       }
     } catch (e) {
       console.error("Gemini error:", e);
+    }
+  }
+  
+  // Try OpenAI
+  if (apiKeys.openai) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKeys.openai}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages,
+          max_tokens: 4000,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.choices?.[0]?.message?.content || "";
+      }
+    } catch (e) {
+      console.error("OpenAI error:", e);
     }
   }
   
@@ -112,7 +112,7 @@ serve(async (req) => {
     const openrouterApiKey = Deno.env.get("OPENROUTER_API_KEY");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { query, userId } = await req.json();
+    const { query, userId, searchMode = 'academic' } = await req.json();
 
     if (!query) {
       return new Response(
@@ -122,17 +122,25 @@ serve(async (req) => {
     }
 
     let searchResults: any[] = [];
-    let aiInsights = "";
-    let projectIdeas: any[] = [];
 
-    // Use Serper API for web search - search for EXISTING projects
+    // Use Serper API for web search
     if (serperApiKey) {
       try {
-        // Search specifically for existing projects on GitHub, research papers, and implementations
-        const searchQueries = [
-          `${query} github project repository`,
-          `${query} research paper implementation`,
-        ];
+        const searchQueries: string[] = [];
+        
+        if (searchMode === 'projects') {
+          // Computer Science / Technical project search
+          searchQueries.push(
+            `${query} github project repository`,
+            `${query} implementation source code`
+          );
+        } else {
+          // Academic / General research search
+          searchQueries.push(
+            `${query} research paper study`,
+            `${query} academic journal article`
+          );
+        }
 
         for (const searchQuery of searchQueries) {
           const searchResponse = await fetch("https://google.serper.dev/search", {
@@ -150,7 +158,6 @@ serve(async (req) => {
           if (searchResponse.ok) {
             const searchData = await searchResponse.json();
             
-            // Process organic results
             if (searchData.organic) {
               const newResults = searchData.organic.map((item: any, index: number) => ({
                 id: `result-${searchResults.length + index}`,
@@ -166,6 +173,37 @@ serve(async (req) => {
           }
         }
 
+        // Also search Google Scholar for academic mode
+        if (searchMode === 'academic') {
+          try {
+            const scholarResponse = await fetch("https://google.serper.dev/scholar", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-API-KEY": serperApiKey,
+              },
+              body: JSON.stringify({ q: query, num: 5 }),
+            });
+
+            if (scholarResponse.ok) {
+              const scholarData = await scholarResponse.json();
+              if (scholarData.organic) {
+                const scholarResults = scholarData.organic.map((item: any, index: number) => ({
+                  id: `scholar-${index}`,
+                  title: item.title,
+                  snippet: item.snippet || item.publicationInfo || '',
+                  url: item.link,
+                  source: 'Google Scholar',
+                  isGitHub: false,
+                }));
+                searchResults.push(...scholarResults);
+              }
+            }
+          } catch (e) {
+            console.log("Scholar search skipped:", e);
+          }
+        }
+
         // Deduplicate by URL
         const seen = new Set();
         searchResults = searchResults.filter(r => {
@@ -174,12 +212,20 @@ serve(async (req) => {
           return true;
         });
 
-        // Prioritize GitHub results
-        searchResults.sort((a, b) => {
-          if (a.isGitHub && !b.isGitHub) return -1;
-          if (!a.isGitHub && b.isGitHub) return 1;
-          return 0;
-        });
+        // Sort: GitHub first for projects, Scholar first for academic
+        if (searchMode === 'projects') {
+          searchResults.sort((a, b) => {
+            if (a.isGitHub && !b.isGitHub) return -1;
+            if (!a.isGitHub && b.isGitHub) return 1;
+            return 0;
+          });
+        } else {
+          searchResults.sort((a, b) => {
+            if (a.source === 'Google Scholar' && b.source !== 'Google Scholar') return -1;
+            if (a.source !== 'Google Scholar' && b.source === 'Google Scholar') return 1;
+            return 0;
+          });
+        }
 
         searchResults = searchResults.slice(0, 12);
       } catch (e) {
@@ -187,34 +233,53 @@ serve(async (req) => {
       }
     }
 
-    // Generate AI insights focusing on EXISTING projects found
-    const aiMessages = [
-      {
-        role: "system",
-        content: `You are a research assistant that helps students find EXISTING projects and implementations. Based on the search results, provide:
-1. A summary of the existing projects found
-2. Key features and approaches used in these projects
-3. Suggestions for how to build upon or improve these existing solutions
+    // Generate AI insights based on search mode
+    let aiInsights = "";
+    let projectIdeas: any[] = [];
+    let existingProjects: string[] = [];
+    let gaps: string[] = [];
+    let relatedTopics: string[] = [];
 
-Return as JSON with this format:
+    const systemPrompt = searchMode === 'projects' 
+      ? `You are a technical research assistant helping students find EXISTING projects and implementations. Based on the search results, provide:
+1. A summary of the existing projects/implementations found
+2. Key features and technologies used
+3. Suggestions for how to improve or build upon these solutions
+4. Related topics to explore
+
+Return as JSON:
 {
-  "insights": "Summary of existing projects found...",
-  "projectIdeas": [
-    {"title": "Enhancement Idea", "description": "How to improve on existing work", "basedOn": "Which existing project this builds upon"},
-    ...
-  ],
-  "existingProjects": ["Project 1 name", "Project 2 name", ...],
-  "gaps": ["What's missing in current solutions", ...]
+  "insights": "Summary of existing projects...",
+  "projectIdeas": [{"title": "Enhancement Idea", "description": "How to improve", "basedOn": "Which project"}],
+  "existingProjects": ["Project 1", "Project 2"],
+  "gaps": ["What's missing in current solutions"],
+  "relatedTopics": ["Topic 1", "Topic 2"]
 }`
-      },
+      : `You are an academic research assistant helping students explore research topics across ALL disciplines (not just computer science). Based on the search results, provide:
+1. A comprehensive summary of the research landscape
+2. Key findings and methodologies
+3. Research gaps and opportunities
+4. Suggestions for original research directions
+
+Return as JSON:
+{
+  "insights": "Summary of research findings...",
+  "projectIdeas": [{"title": "Research Direction", "description": "Potential study approach"}],
+  "gaps": ["Unexplored areas", "Methodological gaps"],
+  "relatedTopics": ["Related field 1", "Interdisciplinary connection"]
+}`;
+
+    const aiMessages = [
+      { role: "system", content: systemPrompt },
       {
         role: "user",
         content: `Research topic: "${query}"
+Mode: ${searchMode === 'projects' ? 'Technical/Project Search' : 'Academic Research'}
 
-Existing projects and implementations found:
+Search results found:
 ${searchResults.slice(0, 8).map(r => `- ${r.title} (${r.source}): ${r.snippet}`).join('\n')}
 
-Analyze these existing projects and provide insights on what has been built and how to improve upon them.`
+Analyze these results and provide insights.`
       }
     ];
 
@@ -231,6 +296,9 @@ Analyze these existing projects and provide insights on what has been built and 
           const parsed = JSON.parse(jsonMatch[0]);
           aiInsights = parsed.insights || "";
           projectIdeas = parsed.projectIdeas || [];
+          existingProjects = parsed.existingProjects || [];
+          gaps = parsed.gaps || [];
+          relatedTopics = parsed.relatedTopics || [];
         }
       } catch (e) {
         aiInsights = aiResponse;
@@ -262,7 +330,10 @@ Analyze these existing projects and provide insights on what has been built and 
         success: true,
         results: searchResults,
         insights: aiInsights,
-        projectIdeas: projectIdeas,
+        projectIdeas,
+        existingProjects,
+        gaps,
+        relatedTopics,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
