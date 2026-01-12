@@ -1,18 +1,12 @@
-import React, { lazy, Suspense } from "react";
+import React, { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { Suspense, lazy } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-
-import Index from "./pages/Index";
-import Auth from "./pages/Auth";
-
-import PageLoading from "@/components/layout/PageLoading";
 
 // Lazy-load page components
 const Index = lazy(() => import("./pages/Index"));
@@ -47,7 +41,6 @@ const App = () => (
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
           <Suspense fallback={<RouteLoading />}>
-          <Suspense fallback={<PageLoading />}>
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
@@ -75,4 +68,3 @@ const App = () => (
 );
 
 export default App;
-
