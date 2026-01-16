@@ -6,6 +6,30 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Helper to validate JWT and extract user
+async function validateAuth(req: Request): Promise<{ userId: string | null; error: string | null }> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return { userId: null, error: "Missing or invalid authorization header" };
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } }
+  });
+
+  const token = authHeader.replace("Bearer ", "");
+  const { data, error } = await supabase.auth.getUser(token);
+  
+  if (error || !data?.user) {
+    return { userId: null, error: "Invalid or expired token" };
+  }
+  
+  return { userId: data.user.id, error: null };
+}
+
 // AI Models with fallback - Try OpenAI first, then Gemini
 async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: string; openrouter?: string }) {
   const errors: string[] = [];
@@ -112,6 +136,15 @@ serve(async (req) => {
   }
 
   try {
+    // Validate JWT and get authenticated user
+    const { userId, error: authError } = await validateAuth(req);
+    if (authError || !userId) {
+      return new Response(
+        JSON.stringify({ error: authError || "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
@@ -119,13 +152,34 @@ serve(async (req) => {
     const openrouterApiKey = Deno.env.get("OPENROUTER_API_KEY");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { userId, materialId, pdfContent, toolType, studyFocus } = await req.json();
+    const { materialId, pdfContent, toolType, studyFocus } = await req.json();
 
-    if (!userId || !pdfContent || !toolType) {
+    // Log for audit
+    console.log(`Study tools generation for user: ${userId}, tool: ${toolType}`);
+
+    if (!pdfContent || !toolType) {
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // If materialId provided, verify ownership
+    if (materialId) {
+      const { data: material, error: verifyError } = await supabase
+        .from("course_materials")
+        .select("id, user_id")
+        .eq("id", materialId)
+        .eq("user_id", userId)
+        .single();
+
+      if (verifyError || !material) {
+        console.error(`Material access denied: ${materialId} for user ${userId}`);
+        return new Response(
+          JSON.stringify({ error: "Material not found or access denied" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     let systemPrompt = "";
@@ -254,10 +308,10 @@ ${pdfContent.substring(0, 30000)}`;
         .eq("id", materialId);
     }
 
-    // Log activity
+    // Log activity using authenticated userId
     try {
       await supabase.from("learning_activity").insert({
-        user_id: userId,
+        user_id: userId, // Using authenticated user, not from request body
         activity_type: toolType === "quiz" ? "quiz" : "flashcard",
         activity_count: 1,
       });

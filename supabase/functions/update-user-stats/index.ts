@@ -6,6 +6,30 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Helper to validate JWT and extract user
+async function validateAuth(req: Request): Promise<{ userId: string | null; error: string | null }> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return { userId: null, error: "Missing or invalid authorization header" };
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } }
+  });
+
+  const token = authHeader.replace("Bearer ", "");
+  const { data, error } = await supabase.auth.getUser(token);
+  
+  if (error || !data?.user) {
+    return { userId: null, error: "Invalid or expired token" };
+  }
+  
+  return { userId: data.user.id, error: null };
+}
+
 const XP_VALUES: Record<string, number> = {
   ai_chat: 5,
   pdf_upload: 15,
@@ -62,18 +86,23 @@ serve(async (req) => {
   }
 
   try {
+    // Validate JWT and get authenticated user
+    const { userId, error: authError } = await validateAuth(req);
+    if (authError || !userId) {
+      return new Response(
+        JSON.stringify({ error: authError || "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { userId, activityType, incrementValue = 1 } = await req.json();
+    const { activityType, incrementValue = 1 } = await req.json();
 
-    if (!userId) {
-      return new Response(
-        JSON.stringify({ error: "Missing userId" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // Log for audit - using authenticated userId, not from request body
+    console.log(`Stats update for user: ${userId}, activity: ${activityType}`);
 
     // Get or create user stats
     let { data: stats, error: statsError } = await supabase
