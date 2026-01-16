@@ -6,6 +6,14 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
 // Helper to validate JWT and extract user
 async function validateAuth(req: Request): Promise<{ userId: string | null; error: string | null }> {
   const authHeader = req.headers.get("Authorization");
@@ -109,167 +117,93 @@ async function performScholarSearch(query: string, retries = 1) {
   return { promptString: "", citations: [] };
 }
 
-// AI Model caller with fallback chain
+// AI Model caller (OpenRouter only)
+function attachImagesToLastUserMessage(messages: any[], pdfImages?: string[]) {
+  const images = (pdfImages || [])
+    .filter((img) => typeof img === "string" && img.startsWith("data:image"))
+    .slice(0, 2);
+
+  if (!images.length) return messages;
+
+  const lastUserFromEnd = [...messages].reverse().findIndex((m) => m?.role === "user");
+  if (lastUserFromEnd === -1) return messages;
+
+  const idx = messages.length - 1 - lastUserFromEnd;
+  const last = messages[idx];
+  if (!last || typeof last.content !== "string") return messages;
+
+  const contentParts = [
+    { type: "text", text: last.content },
+    ...images.map((url) => ({ type: "image_url", image_url: { url } })),
+  ];
+
+  const next = messages.slice();
+  next[idx] = { ...last, content: contentParts };
+  return next;
+}
+
 async function callAI(
   messages: any[],
   providerId: string,
   pdfImages?: string[],
-  stream = true
+  stream = true,
+  requestOrigin?: string,
 ) {
-  const openaiKey = Deno.env.get("OPENAI_API_KEY");
-  const geminiKey = Deno.env.get("GEMINI_API_KEY");
   const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
+  if (!openrouterKey) {
+    throw new HttpError(500, "OPENROUTER_API_KEY is not configured in backend secrets");
+  }
 
-  const errors: string[] = [];
+  // Map UI providerId to OpenRouter model id
+  let model = "google/gemini-2.0-flash-lite-001";
+  if (providerId === "openrouter") {
+    model = "openai/gpt-4o";
+  } else if (providerId === "google-pro") {
+    model = "google/gemini-2.0-flash-001";
+  } else if (providerId === "google") {
+    model = "google/gemini-2.0-flash-lite-001";
+  }
 
-  // Build model priority - always use OpenRouter as primary
-  const modelChain: Array<{ provider: string; model: string; key?: string }> = [];
+  const orMessages = attachImagesToLastUserMessage(messages, pdfImages);
 
-  // OpenRouter is the primary provider
-  if (openrouterKey) {
-    // Map providerId to OpenRouter model
-    let orModel = "google/gemini-2.0-flash-001"; // default
-    if (providerId === "gpt-5" || providerId === "openrouter") {
-      orModel = "openai/gpt-4o";
-    } else if (providerId === "gemini-pro" || providerId === "google-pro") {
-      orModel = "google/gemini-2.0-flash-001";
-    } else if (providerId === "gemini-flash" || providerId === "google") {
-      orModel = "google/gemini-2.0-flash-lite-001";
+  console.log(`Attempting openrouter (${model})`);
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openrouterKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": requestOrigin || "https://lovable.dev",
+      "X-Title": "Elizade AI",
+    },
+    body: JSON.stringify({
+      model,
+      messages: orMessages,
+      max_tokens: 4096,
+      stream,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    console.error(`OpenRouter failed (${res.status}): ${errText}`);
+
+    if (res.status === 401) {
+      throw new HttpError(401, "OpenRouter authentication failed. Please update OPENROUTER_API_KEY.");
     }
-    modelChain.push({ provider: "openrouter", model: orModel, key: openrouterKey });
-  }
-
-  // Fallback to direct API keys if OpenRouter fails
-  if (openaiKey) {
-    modelChain.push({ provider: "openai", model: "gpt-4o-mini", key: openaiKey });
-  }
-  if (geminiKey) {
-    modelChain.push({ provider: "gemini", model: "gemini-2.0-flash-lite", key: geminiKey });
-  }
-
-  for (const config of modelChain) {
-    try {
-      console.log(`Attempting ${config.provider} (${config.model})`);
-
-      if (config.provider === "gemini") {
-        // Gemini API - merge system prompt into first user message
-        const systemPrompt = messages.find(m => m.role === "system")?.content || "";
-        const nonSystemMessages = messages.filter(m => m.role !== "system");
-
-        // Build contents array
-        const contents: any[] = [];
-
-        for (let i = 0; i < nonSystemMessages.length; i++) {
-          const msg = nonSystemMessages[i];
-          const role = msg.role === "assistant" ? "model" : "user";
-
-          let parts: any[] = [];
-
-          // For first user message, prepend system prompt
-          if (i === 0 && role === "user" && systemPrompt) {
-            parts.push({ text: `${systemPrompt}\n\n${msg.content}` });
-          } else {
-            parts.push({ text: msg.content });
-          }
-
-          // Add images to the last user message only
-          if (i === nonSystemMessages.length - 1 && role === "user" && pdfImages?.length) {
-            for (const img of pdfImages.slice(0, 2)) {
-              if (img.startsWith("data:image")) {
-                const base64Data = img.split(",")[1];
-                parts.push({
-                  inline_data: {
-                    mime_type: "image/jpeg",
-                    data: base64Data
-                  }
-                });
-              }
-            }
-          }
-
-          contents.push({ role, parts });
-        }
-
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:${stream ? "streamGenerateContent" : "generateContent"}?key=${config.key}`;
-
-        const res = await fetch(geminiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents,
-            generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
-          }),
-        });
-
-        if (!res.ok) {
-          const errText = await res.text();
-          errors.push(`Gemini ${config.model} failed (${res.status}): ${errText}`);
-          console.error(`Gemini ${config.model} failed (${res.status}): ${errText}`);
-          continue;
-        }
-
-        return { response: res, provider: "gemini", model: config.model };
-      }
-
-      if (config.provider === "openrouter") {
-        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${config.key}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://elizade-ai.lovable.app",
-          },
-          body: JSON.stringify({
-            model: config.model,
-            messages,
-            max_tokens: 4096,
-            stream,
-          }),
-        });
-
-        if (!res.ok) {
-          const errText = await res.text();
-          errors.push(`OpenRouter failed (${res.status}): ${errText}`);
-          console.error(`OpenRouter failed (${res.status}): ${errText}`);
-          continue;
-        }
-
-        return { response: res, provider: "openrouter", model: config.model };
-      }
-
-      if (config.provider === "openai") {
-        const res = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${config.key}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: config.model,
-            messages,
-            max_tokens: 4096,
-            stream,
-          }),
-        });
-
-        if (!res.ok) {
-          const errText = await res.text();
-          errors.push(`OpenAI failed (${res.status}): ${errText}`);
-          console.error(`OpenAI failed (${res.status}): ${errText}`);
-          continue;
-        }
-
-        return { response: res, provider: "openai", model: config.model };
-      }
-    } catch (e) {
-      errors.push(`${config.provider} error: ${e}`);
-      console.error(`${config.provider} error:`, e);
+    if (res.status === 402) {
+      throw new HttpError(402, "OpenRouter billing/credits required.");
     }
+    if (res.status === 429) {
+      throw new HttpError(429, "OpenRouter rate limit exceeded. Please retry shortly.");
+    }
+
+    throw new HttpError(502, `OpenRouter error (${res.status}).`);
   }
 
-  console.error("All AI models failed. Final error:", errors.join("; "));
-  throw new Error(`All AI models failed: ${errors.join("; ")}`);
+  return { response: res, provider: "openrouter", model };
 }
+
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -350,7 +284,15 @@ ${pdfContext.substring(0, 15000)}`;
       ...messages.slice(-10), // Keep last 10 messages for context
     ];
 
-    const { response, provider, model } = await callAI(aiMessages, providerId || "google", pdfImages, true);
+    const requestOrigin = req.headers.get("origin") || req.headers.get("referer") || undefined;
+
+    const { response, provider, model } = await callAI(
+      aiMessages,
+      providerId || "google",
+      pdfImages,
+      true,
+      requestOrigin,
+    );
 
     // Handle streaming based on provider
     const headers = new Headers(corsHeaders);
@@ -400,9 +342,20 @@ ${pdfContext.substring(0, 15000)}`;
 
   } catch (error) {
     console.error("ai-chat error:", error);
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "AI chat failed" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+
+    let status = 500;
+    let message = "AI chat failed";
+
+    if (error instanceof HttpError) {
+      status = error.status;
+      message = error.message;
+    } else if (error instanceof Error) {
+      message = error.message;
+    }
+
+    return new Response(JSON.stringify({ error: message }), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
