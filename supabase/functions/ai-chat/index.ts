@@ -122,40 +122,28 @@ async function callAI(
 
   const errors: string[] = [];
 
-  // Build model priority based on user selection
+  // Build model priority - always use OpenRouter as primary
   const modelChain: Array<{ provider: string; model: string; key?: string }> = [];
 
-  if (providerId === "google" || providerId === "google-pro") {
-    // Gemini first
-    if (geminiKey) {
-      modelChain.push({ provider: "gemini", model: providerId === "google-pro" ? "gemini-2.0-flash" : "gemini-2.0-flash-lite", key: geminiKey });
+  // OpenRouter is the primary provider
+  if (openrouterKey) {
+    // Map providerId to OpenRouter model
+    let orModel = "google/gemini-2.0-flash-001"; // default
+    if (providerId === "gpt-5" || providerId === "openrouter") {
+      orModel = "openai/gpt-4o";
+    } else if (providerId === "gemini-pro" || providerId === "google-pro") {
+      orModel = "google/gemini-2.0-flash-001";
+    } else if (providerId === "gemini-flash" || providerId === "google") {
+      orModel = "google/gemini-2.0-flash-lite-001";
     }
-    if (openrouterKey) {
-      modelChain.push({ provider: "openrouter", model: "google/gemini-2.0-flash-001", key: openrouterKey });
-    }
-  } else if (providerId === "openrouter") {
-    // OpenRouter GPT first
-    if (openrouterKey) {
-      modelChain.push({ provider: "openrouter", model: "openai/gpt-4o", key: openrouterKey });
-    }
-    if (openaiKey) {
-      modelChain.push({ provider: "openai", model: "gpt-4o", key: openaiKey });
-    }
-  } else {
-    // Default: try Gemini, then OpenRouter
-    if (geminiKey) {
-      modelChain.push({ provider: "gemini", model: "gemini-2.0-flash-lite", key: geminiKey });
-    }
-    if (openrouterKey) {
-      modelChain.push({ provider: "openrouter", model: "google/gemini-2.0-flash-001", key: openrouterKey });
-    }
-    if (openaiKey) {
-      modelChain.push({ provider: "openai", model: "gpt-4o-mini", key: openaiKey });
-    }
+    modelChain.push({ provider: "openrouter", model: orModel, key: openrouterKey });
   }
 
-  // Fallback chain
-  if (geminiKey && !modelChain.some(m => m.provider === "gemini")) {
+  // Fallback to direct API keys if OpenRouter fails
+  if (openaiKey) {
+    modelChain.push({ provider: "openai", model: "gpt-4o-mini", key: openaiKey });
+  }
+  if (geminiKey) {
     modelChain.push({ provider: "gemini", model: "gemini-2.0-flash-lite", key: geminiKey });
   }
 
