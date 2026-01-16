@@ -150,20 +150,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signIn = async (identifier: string, password: string) => {
-    let email = identifier;
+    // Sanitize identifier - remove any characters that could be used for injection
+    const sanitizedIdentifier = identifier.trim().replace(/['"\\;,()]/g, '');
     
-    if (!identifier.includes('@')) {
-      const { data: profiles, error: profileError } = await supabase
+    // Validate identifier format
+    if (!sanitizedIdentifier || sanitizedIdentifier.length > 255) {
+      return { error: new Error('Invalid identifier format.') };
+    }
+    
+    let email = sanitizedIdentifier;
+    
+    // If not an email, look up by username or matric number using safe separate queries
+    if (!sanitizedIdentifier.includes('@')) {
+      // Use separate .eq() queries instead of .or() with string interpolation
+      // This prevents SQL/filter injection attacks
+      
+      // First try email_username
+      const { data: usernameProfiles, error: usernameError } = await supabase
         .from('profiles')
         .select('email')
-        .or(`email_username.eq.${identifier},matric_number.eq.${identifier}`)
+        .eq('email_username', sanitizedIdentifier)
         .limit(1);
       
-      if (profileError || !profiles || profiles.length === 0) {
-        return { error: new Error('User not found. Please check your credentials.') };
+      if (usernameError) {
+        console.error('[Auth] Username lookup error:', usernameError);
+        return { error: new Error('Authentication error. Please try again.') };
       }
       
-      email = profiles[0].email;
+      if (usernameProfiles && usernameProfiles.length > 0) {
+        email = usernameProfiles[0].email;
+      } else {
+        // Try matric_number
+        const { data: matricProfiles, error: matricError } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('matric_number', sanitizedIdentifier)
+          .limit(1);
+        
+        if (matricError) {
+          console.error('[Auth] Matric lookup error:', matricError);
+          return { error: new Error('Authentication error. Please try again.') };
+        }
+        
+        if (!matricProfiles || matricProfiles.length === 0) {
+          return { error: new Error('User not found. Please check your credentials.') };
+        }
+        
+        email = matricProfiles[0].email;
+      }
     }
     
     const { data, error } = await supabase.auth.signInWithPassword({
