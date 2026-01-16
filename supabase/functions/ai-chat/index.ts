@@ -6,6 +6,30 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Helper to validate JWT and extract user
+async function validateAuth(req: Request): Promise<{ userId: string | null; error: string | null }> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return { userId: null, error: "Missing or invalid authorization header" };
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } }
+  });
+
+  const token = authHeader.replace("Bearer ", "");
+  const { data, error } = await supabase.auth.getUser(token);
+  
+  if (error || !data?.user) {
+    return { userId: null, error: "Invalid or expired token" };
+  }
+  
+  return { userId: data.user.id, error: null };
+}
+
 // Helper for Year Extraction and Sanitization
 const cleanText = (text: string) => text.replace(/[\x00-\x1F\x7F-\x9F]/g, "").substring(0, 500);
 
@@ -265,7 +289,19 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, providerId, pdfContext, pdfImages, ocrContext, mode, userId, scanProgress } = await req.json();
+    // Validate JWT and get authenticated user
+    const { userId, error: authError } = await validateAuth(req);
+    if (authError || !userId) {
+      return new Response(
+        JSON.stringify({ error: authError || "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { messages, providerId, pdfContext, pdfImages, ocrContext, mode, scanProgress } = await req.json();
+
+    // Log for audit
+    console.log(`AI chat request from user: ${userId}`);
 
     if (!messages || messages.length === 0) {
       return new Response(JSON.stringify({ error: "No messages provided" }), {

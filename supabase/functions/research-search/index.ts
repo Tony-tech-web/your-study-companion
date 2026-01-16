@@ -6,6 +6,30 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Helper to validate JWT and extract user
+async function validateAuth(req: Request): Promise<{ userId: string | null; error: string | null }> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return { userId: null, error: "Missing or invalid authorization header" };
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } }
+  });
+
+  const token = authHeader.replace("Bearer ", "");
+  const { data, error } = await supabase.auth.getUser(token);
+  
+  if (error || !data?.user) {
+    return { userId: null, error: "Invalid or expired token" };
+  }
+  
+  return { userId: data.user.id, error: null };
+}
+
 // AI call helper with fallback
 async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: string; openrouter?: string }) {
   // Try OpenRouter first
@@ -104,6 +128,15 @@ serve(async (req) => {
   }
 
   try {
+    // Validate JWT and get authenticated user
+    const { userId, error: authError } = await validateAuth(req);
+    if (authError || !userId) {
+      return new Response(
+        JSON.stringify({ error: authError || "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const serperApiKey = Deno.env.get("SERPER_API_KEY");
@@ -112,7 +145,10 @@ serve(async (req) => {
     const openrouterApiKey = Deno.env.get("OPENROUTER_API_KEY");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { query, userId, searchMode = 'academic' } = await req.json();
+    // Log for audit
+    console.log(`Research search from user: ${userId}`);
+
+    const { query, searchMode = 'academic' } = await req.json();
 
     if (!query) {
       return new Response(
@@ -305,24 +341,22 @@ Analyze these results and provide insights.`
       }
     }
 
-    // Log activity and save to research history
-    if (userId) {
-      try {
-        await supabase.from("learning_activity").insert({
-          user_id: userId,
-          activity_type: "research",
-          activity_count: 1,
-        });
+    // Log activity and save to research history using authenticated userId
+    try {
+      await supabase.from("learning_activity").insert({
+        user_id: userId, // Using authenticated user, not from request body
+        activity_type: "research",
+        activity_count: 1,
+      });
 
-        await supabase.from("research_history").insert({
-          user_id: userId,
-          query: query,
-          results: searchResults,
-          ai_summary: aiInsights,
-        });
-      } catch (e) {
-        console.log("Activity logging skipped");
-      }
+      await supabase.from("research_history").insert({
+        user_id: userId, // Using authenticated user, not from request body
+        query: query,
+        results: searchResults,
+        ai_summary: aiInsights,
+      });
+    } catch (e) {
+      console.log("Activity logging skipped");
     }
 
     return new Response(
