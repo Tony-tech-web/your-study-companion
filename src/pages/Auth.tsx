@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { GraduationCap, Mail, Lock, User, Phone, Hash, Loader2, Eye, EyeOff } from 'lucide-react';
+import { GraduationCap, Mail, Lock, User, Phone, Hash, Loader2, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -133,11 +133,22 @@ export default function Auth() {
         transition={{ duration: 0.5 }}
         className="relative z-10 w-full max-w-md"
       >
+        {/* Back to Home Link */}
+        <Link 
+          to="/" 
+          className="inline-flex items-center gap-2 text-cream/60 hover:text-cream transition-colors mb-6 group"
+        >
+          <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+          Back to Home
+        </Link>
+
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent mb-4 shadow-gold-lg">
-            <GraduationCap className="h-8 w-8 text-accent-foreground" />
-          </div>
+          <Link to="/">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent mb-4 shadow-gold-lg hover:scale-105 transition-transform">
+              <GraduationCap className="h-8 w-8 text-accent-foreground" />
+            </div>
+          </Link>
           <h1 className="font-display text-3xl font-bold text-cream">Elizade AI</h1>
           <p className="text-cream/60 mt-1">Your AI-Powered Study Partner</p>
         </div>
