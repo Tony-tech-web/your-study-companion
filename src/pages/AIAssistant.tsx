@@ -290,6 +290,12 @@ export default function AIAssistant() {
       if (!resp.ok || !resp.body) {
         const errorData = await resp.json().catch(() => ({}));
         console.error('AI error response:', resp.status, errorData);
+        
+        // Provide helpful error messages
+        if (resp.status === 500 && errorData.error?.includes('OPENROUTER_API_KEY')) {
+          throw new Error('AI service configuration error. Please contact support.');
+        }
+        
         throw new Error(errorData.error || errorData.details || 'Failed to get response');
       }
 

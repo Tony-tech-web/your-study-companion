@@ -136,7 +136,7 @@ export function usePdfLibrary() {
 
       console.log(`Extracted ${result.pagesProcessed}/${result.pageCount} pages, text length: ${result.text.length}`);
 
-      // Log activity
+      // Log activity (optional - fails silently if table doesn't exist)
       try {
         await supabase.from('learning_activity').insert({
           user_id: user.id,
@@ -144,7 +144,7 @@ export function usePdfLibrary() {
           activity_count: result.pagesProcessed,
         });
       } catch (e) {
-        console.log('Activity logging skipped');
+        // Silently skip activity logging if it fails
       }
 
       // Build context with summary info
