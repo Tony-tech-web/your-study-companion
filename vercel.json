@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "backend/src/index.ts"
+    }
+  ],
+  "functions": {
+    "backend/src/index.ts": {
+      "runtime": "vercel-node@latest",
+      "includeFiles": "backend/prisma/**"
+    }
+  }
+}
