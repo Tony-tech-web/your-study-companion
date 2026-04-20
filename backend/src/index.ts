@@ -90,6 +90,9 @@ app.use(
   express.static(path.join(__dirname, "docs", "swagger-theme.css"))
 );
 
+// ── Favicon ────────────────────────────────────────────────
+app.get("/favicon.ico", (_req, res) => res.status(204).end());
+
 // ── 404 fallback ───────────────────────────────────────────
 app.use((_req, res) => {
   res.status(404).json({ error: "Route not found" });
