@@ -96,10 +96,13 @@ app.use((_req, res) => {
 });
 
 // ── Start ──────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`\n🚀  Server running at http://localhost:${PORT}`);
-  console.log(`📖  API Docs    →  http://localhost:${PORT}/api-docs`);
-  console.log(`🔧  Health      →  http://localhost:${PORT}/health\n`);
-});
+// Only start the server when running locally, not on Vercel
+if (process.env.NODE_ENV !== "production") {
+  app.listen(PORT, () => {
+    console.log(`\n🚀  Server running at http://localhost:${PORT}`);
+    console.log(`📖  API Docs    →  http://localhost:${PORT}/api-docs`);
+    console.log(`🔧  Health      →  http://localhost:${PORT}/health\n`);
+  });
+}
 
 export default app;
