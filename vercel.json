@@ -5,11 +5,5 @@
       "source": "/(.*)",
       "destination": "backend/src/index.ts"
     }
-  ],
-  "functions": {
-    "backend/src/index.ts": {
-      "runtime": "vercel-node@latest",
-      "includeFiles": "backend/prisma/**"
-    }
-  }
+  ]
 }
