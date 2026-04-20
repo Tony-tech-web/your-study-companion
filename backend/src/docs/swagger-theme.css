@@ -1,0 +1,228 @@
+/* ============================================================
+   iOS Dark Liquid Glass — Swagger UI Theme
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg-color: #050505;
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --accent-blue: #007aff;
+  --accent-green: #34c759;
+  --accent-orange: #ff9500;
+  --accent-red: #ff3b30;
+  --text-main: #ffffff;
+  --text-muted: #98989d;
+  --liquid-gradient: linear-gradient(135deg, rgba(0, 122, 255, 0.2) 0%, rgba(5, 5, 5, 0) 50%, rgba(255, 59, 48, 0.1) 100%);
+}
+
+body {
+  background: var(--bg-color) !important;
+  background-image: var(--liquid-gradient) !important;
+  background-attachment: fixed !important;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  color: var(--text-main) !important;
+  margin: 0 !important;
+}
+
+.swagger-ui {
+  font-family: 'Outfit', sans-serif !important;
+  color: var(--text-main) !important;
+}
+
+/* ── Topbar ─────────────────────────────────────────────── */
+.swagger-ui .topbar {
+  background: rgba(0, 0, 0, 0.6) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid var(--glass-border) !important;
+  padding: 16px 0 !important;
+}
+
+.swagger-ui .topbar .topbar-wrapper .link span {
+  color: var(--text-main) !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.5px !important;
+}
+
+/* ── Info Block ─────────────────────────────────────────── */
+.swagger-ui .info {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 20px !important;
+  padding: 32px !important;
+  margin: 40px 0 !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+}
+
+.swagger-ui .info .title {
+  color: var(--text-main) !important;
+  font-size: 32px !important;
+  font-weight: 700 !important;
+  letter-spacing: -1px !important;
+}
+
+.swagger-ui .info p,
+.swagger-ui .info .description p {
+  color: var(--text-muted) !important;
+  font-size: 16px !important;
+  line-height: 1.6 !important;
+  font-weight: 400 !important;
+}
+
+/* ── Tags (section headers) ─────────────────────────────── */
+.swagger-ui .opblock-tag {
+  border-bottom: 1px solid var(--glass-border) !important;
+  margin-bottom: 24px !important;
+  padding: 24px 0 12px 0 !important;
+}
+
+.swagger-ui .opblock-tag h3,
+.swagger-ui .opblock-tag h3 span {
+  color: var(--text-main) !important;
+  font-size: 22px !important;
+  font-weight: 600 !important;
+}
+
+/* ── Operation Blocks ───────────────────────────────────── */
+.swagger-ui .opblock {
+  background: var(--glass-bg) !important;
+  border-radius: 14px !important;
+  margin-bottom: 16px !important;
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  overflow: hidden !important;
+}
+
+.swagger-ui .opblock:hover {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  transform: translateY(-2px) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+.swagger-ui .opblock .opblock-summary {
+  padding: 12px 16px !important;
+}
+
+/* ── HTTP Method Pills ──────────────────────────────────── */
+.swagger-ui .opblock-summary-method {
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  letter-spacing: 0.5px !important;
+  min-width: 80px !important;
+  text-transform: uppercase !important;
+  padding: 6px 10px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.swagger-ui .opblock-get .opblock-summary-method { background: rgba(0, 122, 255, 0.2) !important; color: #64d2ff !important; border-color: rgba(0, 122, 255, 0.3) !important; }
+.swagger-ui .opblock-post .opblock-summary-method { background: rgba(52, 199, 89, 0.2) !important; color: #66d48e !important; border-color: rgba(52, 199, 89, 0.3) !important; }
+.swagger-ui .opblock-put .opblock-summary-method { background: rgba(255, 149, 0, 0.2) !important; color: #ffb340 !important; border-color: rgba(255, 149, 0, 0.3) !important; }
+.swagger-ui .opblock-delete .opblock-summary-method { background: rgba(255, 59, 48, 0.2) !important; color: #ff6961 !important; border-color: rgba(255, 59, 48, 0.3) !important; }
+
+/* ── Operation Body (expanded) ──────────────────────────── */
+.swagger-ui .opblock-body {
+  background: rgba(0, 0, 0, 0.2) !important;
+  border-top: 1px solid var(--glass-border) !important;
+}
+
+.swagger-ui .opblock-description-wrapper p,
+.swagger-ui .opblock-summary-description {
+  color: var(--text-muted) !important;
+  font-size: 14px !important;
+}
+
+/* ── Models & Schema ────────────────────────────────────── */
+.swagger-ui .model-box,
+.swagger-ui .model {
+  background: rgba(255, 255, 255, 0.02) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 12px !important;
+  padding: 12px !important;
+}
+
+.swagger-ui .model-title { color: var(--text-main) !important; font-weight: 600 !important; }
+.swagger-ui .prop-type { color: var(--accent-blue) !important; font-family: 'JetBrains Mono', monospace !important; }
+
+/* ── Inputs & Textareas ─────────────────────────────────── */
+.swagger-ui input[type="text"],
+.swagger-ui textarea,
+.swagger-ui select {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 10px !important;
+  color: var(--text-main) !important;
+  padding: 10px 14px !important;
+  font-size: 14px !important;
+  transition: border-color 0.2s !important;
+}
+
+.swagger-ui input[type="text"]:focus {
+  border-color: var(--accent-blue) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ── Buttons ────────────────────────────────────────────── */
+.swagger-ui .btn {
+  border-radius: 10px !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  padding: 8px 18px !important;
+  transition: all 0.2s !important;
+  border: 1px solid var(--glass-border) !important;
+  background: var(--glass-bg) !important;
+  color: var(--text-main) !important;
+}
+
+.swagger-ui .btn.execute {
+  background: linear-gradient(180deg, #007aff 0%, #0056b3 100%) !important;
+  border: none !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3) !important;
+}
+
+.swagger-ui .btn.authorize {
+  background: transparent !important;
+  border: 1.5px solid var(--accent-green) !important;
+  color: var(--accent-green) !important;
+}
+
+.swagger-ui .btn.authorize svg { fill: var(--accent-green) !important; }
+
+/* ── Auth Modal ─────────────────────────────────────────── */
+.swagger-ui .dialog-ux .modal-ux {
+  background: rgba(20, 20, 22, 0.95) !important;
+  backdrop-filter: blur(30px) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6) !important;
+}
+
+/* ── Code blocks ────────────────────────────────────────── */
+.swagger-ui .highlight-code pre {
+  background: rgba(0, 0, 0, 0.4) !important;
+  border-radius: 12px !important;
+  border: 1px solid var(--glass-border) !important;
+  padding: 16px !important;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg-color); }
+::-webkit-scrollbar-thumb { 
+  background: rgba(255, 255, 255, 0.15); 
+  border-radius: 10px; 
+  border: 3px solid var(--bg-color);
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
+
+/* ── Misc ───────────────────────────────────────────────── */
+.swagger-ui .parameter__name { color: var(--text-main) !important; font-weight: 600 !important; }
+.swagger-ui .parameter__type { color: var(--text-muted) !important; font-style: normal !important; }
+.swagger-ui .required { color: var(--accent-red) !important; }
+.swagger-ui .responses-table thead tr th { color: var(--text-muted) !important; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }

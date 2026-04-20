@@ -1,0 +1,180 @@
+// This is your Prisma schema file.
+// Reflects the full Your Study Companion database schema.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Profile {
+  id             String    @id @default(uuid()) @db.Uuid
+  user_id        String    @unique @db.Uuid
+  email          String
+  email_username String
+  matric_number  String?   @unique
+  phone_number   String?
+  full_name      String?
+  avatar_url     String?
+  student_id     String    @unique
+  field_of_study String?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  user_stats     UserStats?
+
+  @@map("profiles")
+}
+
+model StudentPdf {
+  id          String           @id @default(uuid()) @db.Uuid
+  user_id     String           @db.Uuid
+  file_name   String
+  file_path   String
+  file_size   BigInt?
+  uploaded_at DateTime         @default(now())
+
+  course_materials CourseMaterial[]
+
+  @@map("student_pdfs")
+}
+
+model ChatMessage {
+  id          String   @id @default(uuid()) @db.Uuid
+  sender_id   String   @db.Uuid
+  receiver_id String?  @db.Uuid
+  content     String
+  created_at  DateTime @default(now())
+
+  @@map("chat_messages")
+}
+
+model AiConversation {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  role       String   // 'user' | 'assistant'
+  content    String
+  created_at DateTime @default(now())
+
+  @@map("ai_conversations")
+}
+
+model SchoolNews {
+  id           String   @id @default(uuid()) @db.Uuid
+  title        String
+  content      String
+  category     String?  @default("General")
+  published_at DateTime @default(now())
+  created_at   DateTime @default(now())
+
+  @@map("school_news")
+}
+
+model LearningActivity {
+  id             String   @id @default(uuid()) @db.Uuid
+  user_id        String   @db.Uuid
+  activity_type  String   // 'ai_chat' | 'pdf_upload' | 'quiz' | 'flashcard' | 'research' | 'study_plan' | 'gpa_calc' | 'study_tip' | 'course_material' | 'test_session'
+  activity_count Int      @default(1)
+  activity_date  DateTime @default(now()) @db.Date
+  created_at     DateTime @default(now())
+
+  @@map("learning_activity")
+}
+
+model GpaRecord {
+  id            String   @id @default(uuid()) @db.Uuid
+  user_id       String   @db.Uuid
+  semester      String?
+  courses       Json
+  gpa           Decimal  @db.Decimal(3, 2)
+  total_credits Int
+  gpa_class     String?
+  created_at    DateTime @default(now())
+
+  @@map("gpa_records")
+}
+
+model StudyPlan {
+  id          String   @id @default(uuid()) @db.Uuid
+  user_id     String   @db.Uuid
+  name        String
+  subjects    Json
+  total_hours Int      @default(0)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@map("study_plans")
+}
+
+model CourseMaterial {
+  id             String      @id @default(uuid()) @db.Uuid
+  user_id        String      @db.Uuid
+  pdf_id         String?     @db.Uuid
+  title          String
+  description    String?
+  parsed_content String?
+  study_tools    Json?
+  is_processed   Boolean     @default(false)
+  created_at     DateTime    @default(now())
+  updated_at     DateTime    @updatedAt
+
+  pdf StudentPdf? @relation(fields: [pdf_id], references: [id], onDelete: Cascade)
+
+  @@map("course_materials")
+}
+
+model ResearchHistory {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  query      String
+  results    Json?
+  ai_summary String?
+  created_at DateTime @default(now())
+
+  @@map("research_history")
+}
+
+model UserStats {
+  id                        String    @id @default(uuid()) @db.Uuid
+  user_id                   String    @unique @db.Uuid
+  total_study_minutes       Int       @default(0)
+  total_ai_interactions     Int       @default(0)
+  total_pdfs_processed      Int       @default(0)
+  total_quizzes_completed   Int       @default(0)
+  total_flashcards_reviewed Int       @default(0)
+  total_research_minutes    Int       @default(0)
+  total_study_tips_viewed   Int       @default(0)
+  total_plans_created       Int       @default(0)
+  current_streak            Int       @default(0)
+  longest_streak            Int       @default(0)
+  last_activity_date        DateTime? @db.Date
+  last_pulse_at             DateTime? @default(now())
+  xp_points                 Int       @default(0)
+  level                     Int       @default(1)
+  created_at                DateTime  @default(now())
+  updated_at                DateTime  @updatedAt
+
+  profile Profile @relation(fields: [user_id], references: [user_id])
+
+  @@map("user_stats")
+}
+
+// ------------------------------------------------------
+// IGNORED SUPABASE TABLES
+// These tables exist in the database and have policies attached to them.
+// We use @@ignore so Prisma doesn't try to drop them during `db push`.
+// ------------------------------------------------------
+
+model rooms {
+  id String @id @default(uuid()) @db.Uuid
+  @@ignore
+}
+
+model room_members {
+  id String @id @default(uuid()) @db.Uuid
+  @@ignore
+}
