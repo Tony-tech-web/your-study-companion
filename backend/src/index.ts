@@ -25,6 +25,8 @@ import statsRouter from "./routes/userStats";
 import historyRouter from "./routes/history";
 import healthRouter from "./routes/modelHealth";
 import authRouter from "./routes/auth";
+import aiChatRouter from "./routes/aiChat";
+import researchSearchRouter from "./routes/researchSearch";
 
 
 const app = express();
@@ -79,6 +81,8 @@ app.use("/api/stats", statsRouter);
 app.use("/api/history", historyRouter);
 app.use("/api/model-health", healthRouter);
 app.use("/api/auth", authRouter);
+app.use("/api/ai", aiChatRouter);
+app.use("/api/research", researchSearchRouter);
 
 
 // ── OpenAPI / Swagger ──────────────────────────────────────
