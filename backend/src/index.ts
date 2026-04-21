@@ -52,7 +52,16 @@ app.use(express.json({ limit: "2mb" }));
 
 // ── Health ─────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    env: {
+      DATABASE_URL: !!process.env.DATABASE_URL,
+      SUPABASE_URL: !!process.env.SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      NODE_ENV: process.env.NODE_ENV,
+    }
+  });
 });
 
 // ── API Routes ─────────────────────────────────────────────
