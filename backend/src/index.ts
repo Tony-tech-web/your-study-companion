@@ -33,7 +33,18 @@ const PORT = process.env.PORT ?? 3000;
 // ── Middleware ─────────────────────────────────────────────
 app.use(
   cors({
-    origin: process.env.CLIENT_URL ?? "http://localhost:5173",
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      const allowed: (string | undefined)[] = [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        process.env.CLIENT_URL,
+        process.env.FRONTEND_URL,
+      ];
+      if (!origin || allowed.includes(origin) || origin.endsWith('.vercel.app')) {
+        return callback(null, true);
+      }
+      return callback(new Error('CORS: origin not allowed'));
+    },
     credentials: true,
   })
 );
