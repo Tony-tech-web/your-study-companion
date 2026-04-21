@@ -12,6 +12,14 @@ router.get("/me", authenticate, async (req: AuthRequest, res) => {
     });
     // Auto-create stats row if it doesn't exist yet
     if (!stats) {
+      // UserStats has a required FK to Profile — guard against missing profile
+      const profile = await prisma.profile.findUnique({
+        where: { user_id: req.user_id },
+      });
+      if (!profile) {
+        res.status(404).json({ error: "Profile not found. Please complete onboarding before accessing stats." });
+        return;
+      }
       stats = await prisma.userStats.create({
         data: { user_id: req.user_id! },
       });

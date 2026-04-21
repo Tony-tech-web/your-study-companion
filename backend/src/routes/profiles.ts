@@ -20,7 +20,8 @@ router.get("/", authenticate, async (_req: AuthRequest, res: Response) => {
       }
     });
     res.json(profiles);
-  } catch {
+  } catch (err) {
+    console.error("[profiles]", err);
     res.status(500).json({ error: "Failed to fetch student directory" });
   }
 });
@@ -36,7 +37,8 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
       return;
     }
     res.json(profile);
-  } catch {
+  } catch (err) {
+    console.error("[profiles]", err);
     res.status(500).json({ error: "Failed to fetch profile" });
   }
 });
@@ -56,7 +58,8 @@ router.put("/me", authenticate, async (req: AuthRequest, res: Response) => {
       },
     });
     res.json(profile);
-  } catch {
+  } catch (err) {
+    console.error("[profiles]", err);
     res.status(500).json({ error: "Failed to update profile" });
   }
 });

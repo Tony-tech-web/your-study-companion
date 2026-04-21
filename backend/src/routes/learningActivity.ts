@@ -12,7 +12,8 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       orderBy: { activity_date: "desc" },
     });
     res.json(activity);
-  } catch {
+  } catch (err) {
+    console.error("[learningActivity]", err);
     res.status(500).json({ error: "Failed to fetch learning activity" });
   }
 });
@@ -29,7 +30,8 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       data: { activity_type, activity_count: activity_count ?? 1, user_id: req.user_id! },
     });
     res.status(201).json(entry);
-  } catch {
+  } catch (err) {
+    console.error("[learningActivity]", err);
     res.status(500).json({ error: "Failed to log learning activity" });
   }
 });

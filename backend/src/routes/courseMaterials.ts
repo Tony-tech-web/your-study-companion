@@ -13,7 +13,8 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       orderBy: { created_at: "desc" },
     });
     res.json(materials);
-  } catch {
+  } catch (err) {
+    console.error("[courseMaterials]", err);
     res.status(500).json({ error: "Failed to fetch course materials" });
   }
 });
@@ -30,7 +31,8 @@ router.get("/:id", authenticate, async (req: AuthRequest, res: Response) => {
       return;
     }
     res.json(material);
-  } catch {
+  } catch (err) {
+    console.error("[courseMaterials]", err);
     res.status(500).json({ error: "Failed to fetch course material" });
   }
 });
@@ -47,7 +49,8 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       data: { pdf_id, title, description, parsed_content, study_tools, user_id: req.user_id! },
     });
     res.status(201).json(material);
-  } catch {
+  } catch (err) {
+    console.error("[courseMaterials]", err);
     res.status(500).json({ error: "Failed to create course material" });
   }
 });
@@ -67,7 +70,8 @@ router.put("/:id", authenticate, async (req: AuthRequest, res: Response) => {
       data: req.body,
     });
     res.json(updated);
-  } catch {
+  } catch (err) {
+    console.error("[courseMaterials]", err);
     res.status(500).json({ error: "Failed to update course material" });
   }
 });
@@ -84,7 +88,8 @@ router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
     }
     await prisma.courseMaterial.delete({ where: { id: req.params.id } });
     res.status(204).send();
-  } catch {
+  } catch (err) {
+    console.error("[courseMaterials]", err);
     res.status(500).json({ error: "Failed to delete course material" });
   }
 });

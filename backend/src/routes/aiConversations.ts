@@ -12,7 +12,8 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       orderBy: { created_at: "asc" },
     });
     res.json(conversations);
-  } catch {
+  } catch (err) {
+    console.error("[aiConversations] GET /", err);
     res.status(500).json({ error: "Failed to fetch AI conversations" });
   }
 });
@@ -29,7 +30,8 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       data: { role, content, user_id: req.user_id! },
     });
     res.status(201).json(entry);
-  } catch {
+  } catch (err) {
+    console.error("[aiConversations] POST /", err);
     res.status(500).json({ error: "Failed to save AI conversation" });
   }
 });
@@ -39,7 +41,8 @@ router.delete("/", authenticate, async (req: AuthRequest, res: Response) => {
   try {
     await prisma.aiConversation.deleteMany({ where: { user_id: req.user_id } });
     res.status(204).send();
-  } catch {
+  } catch (err) {
+    console.error("[aiConversations] DELETE /", err);
     res.status(500).json({ error: "Failed to clear AI conversations" });
   }
 });
@@ -56,7 +59,8 @@ router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
     }
     await prisma.aiConversation.delete({ where: { id: req.params.id } });
     res.status(204).send();
-  } catch {
+  } catch (err) {
+    console.error("[aiConversations] DELETE /:id", err);
     res.status(500).json({ error: "Failed to delete AI conversation" });
   }
 });

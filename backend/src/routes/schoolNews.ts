@@ -12,7 +12,8 @@ router.get("/", async (_req, res: Response) => {
       take: 20,
     });
     res.json(news);
-  } catch {
+  } catch (err) {
+    console.error("[schoolNews]", err);
     res.status(500).json({ error: "Failed to fetch school news" });
   }
 });
@@ -29,7 +30,8 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       data: { title, content, category },
     });
     res.status(201).json(article);
-  } catch {
+  } catch (err) {
+    console.error("[schoolNews]", err);
     res.status(500).json({ error: "Failed to create news article" });
   }
 });

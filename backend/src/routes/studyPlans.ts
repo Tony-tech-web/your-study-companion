@@ -12,7 +12,8 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       orderBy: { created_at: "desc" },
     });
     res.json(plans);
-  } catch {
+  } catch (err) {
+    console.error("[studyPlans]", err);
     res.status(500).json({ error: "Failed to fetch study plans" });
   }
 });
@@ -29,7 +30,8 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       data: { name, subjects, total_hours: total_hours ?? 0, user_id: req.user_id! },
     });
     res.status(201).json(plan);
-  } catch {
+  } catch (err) {
+    console.error("[studyPlans]", err);
     res.status(500).json({ error: "Failed to create study plan" });
   }
 });
@@ -49,7 +51,8 @@ router.put("/:id", authenticate, async (req: AuthRequest, res: Response) => {
       data: req.body,
     });
     res.json(updated);
-  } catch {
+  } catch (err) {
+    console.error("[studyPlans]", err);
     res.status(500).json({ error: "Failed to update study plan" });
   }
 });
@@ -66,7 +69,8 @@ router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
     }
     await prisma.studyPlan.delete({ where: { id: req.params.id } });
     res.status(204).send();
-  } catch {
+  } catch (err) {
+    console.error("[studyPlans]", err);
     res.status(500).json({ error: "Failed to delete study plan" });
   }
 });
