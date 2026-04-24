@@ -207,11 +207,12 @@ async function callAI(
   const geminiKey = Deno.env.get("GEMINI_API_KEY");
   const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
 
-  // Decide primary provider based on providerId and available keys
-  const preferOpenRouter = providerId === "openrouter";
+  // auto = try Gemini first, fall back to OpenRouter
+  const isAuto = !providerId || providerId === "auto";
+  const preferOpenRouter = providerId === "openrouter" && !isAuto;
 
   // --- Try Gemini ---
-  if (geminiKey && !preferOpenRouter) {
+  if (geminiKey && (isAuto || !preferOpenRouter)) {
     try {
       console.log(`Attempting Gemini (${providerId})`);
       return await callGemini(messages, providerId, stream);
