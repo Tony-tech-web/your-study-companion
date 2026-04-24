@@ -31,15 +31,15 @@ async function validateAuth(req: Request): Promise<{ userId: string | null; erro
   const token = authHeader.replace("Bearer ", "");
   
   try {
-    // Use getClaims for JWT verification
-    const { data, error } = await supabase.auth.getClaims(token);
+    // Use getUser — the correct method in supabase-js v2
+    const { data, error } = await supabase.auth.getUser(token);
     
-    if (error || !data?.claims) {
-      console.error("Auth validation failed:", error?.message || "No claims found");
+    if (error || !data?.user) {
+      console.error("Auth validation failed:", error?.message || "No user found");
       return { userId: null, error: "Invalid or expired token" };
     }
     
-    const userId = data.claims.sub as string;
+    const userId = data.user.id;
     if (!userId) {
       return { userId: null, error: "Invalid token: no user ID" };
     }
