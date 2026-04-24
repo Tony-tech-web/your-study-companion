@@ -155,6 +155,47 @@ function attachImagesToLastUserMessage(messages: any[], pdfImages?: string[]) {
   return next;
 }
 
+// Call Gemini directly via REST API
+async function callGemini(messages: any[], modelId: string, stream: boolean) {
+  const geminiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!geminiKey) throw new HttpError(503, "GEMINI_API_KEY not configured");
+
+  // Map model
+  const geminiModel = modelId === "google-pro" ? "gemini-2.0-flash" : "gemini-2.0-flash-lite";
+
+  // Convert messages — system prompt becomes first user turn if no system role support
+  const systemMsg = messages.find((m: any) => m.role === "system");
+  const chatMsgs = messages.filter((m: any) => m.role !== "system");
+
+  const contents = chatMsgs.map((m: any) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
+  }));
+
+  const body: any = { contents };
+  if (systemMsg) {
+    body.system_instruction = { parts: [{ text: systemMsg.content }] };
+  }
+
+  const endpoint = stream
+    ? `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?alt=sse&key=${geminiKey}`
+    : `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`;
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    console.error(`Gemini failed (${res.status}): ${errText}`);
+    throw new HttpError(res.status, `Gemini error: ${res.status}`);
+  }
+
+  return { response: res, provider: "gemini", model: geminiModel };
+}
+
 async function callAI(
   messages: any[],
   providerId: string,
@@ -162,59 +203,62 @@ async function callAI(
   stream = true,
   requestOrigin?: string,
 ) {
+  // Try Gemini first (free tier available), fall back to OpenRouter
+  const geminiKey = Deno.env.get("GEMINI_API_KEY");
   const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
-  if (!openrouterKey) {
-    throw new HttpError(500, "OPENROUTER_API_KEY is not configured in backend secrets");
+
+  // Decide primary provider based on providerId and available keys
+  const preferOpenRouter = providerId === "openrouter";
+
+  // --- Try Gemini ---
+  if (geminiKey && !preferOpenRouter) {
+    try {
+      console.log(`Attempting Gemini (${providerId})`);
+      return await callGemini(messages, providerId, stream);
+    } catch (e: any) {
+      console.warn("Gemini failed, trying OpenRouter:", e.message);
+      // Fall through to OpenRouter
+    }
   }
 
-  // Map UI providerId to OpenRouter model id
-  let model = "google/gemini-2.0-flash-lite-001";
-  if (providerId === "openrouter") {
-    model = "openai/gpt-4o";
-  } else if (providerId === "google-pro") {
-    model = "google/gemini-2.0-flash-001";
-  } else if (providerId === "google") {
-    model = "google/gemini-2.0-flash-lite-001";
+  // --- Try OpenRouter ---
+  if (openrouterKey) {
+    let model = "google/gemini-2.0-flash-lite-001";
+    if (providerId === "openrouter") model = "openai/gpt-4o";
+    else if (providerId === "google-pro") model = "google/gemini-2.0-flash-001";
+
+    const orMessages = attachImagesToLastUserMessage(messages, pdfImages);
+    console.log(`Attempting OpenRouter (${model})`);
+
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${openrouterKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": requestOrigin || "https://orbit.app",
+        "X-Title": "Orbit AI",
+      },
+      body: JSON.stringify({ model, messages: orMessages, max_tokens: 4096, stream }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.error(`OpenRouter failed (${res.status}): ${errText}`);
+      // If OpenRouter billing fails and we haven't tried Gemini yet, try now
+      if ((res.status === 402 || res.status === 401) && geminiKey && preferOpenRouter) {
+        console.warn("OpenRouter billing issue, falling back to Gemini");
+        return await callGemini(messages, "google", stream);
+      }
+      if (res.status === 401) throw new HttpError(401, "OpenRouter authentication failed.");
+      if (res.status === 402) throw new HttpError(402, "OpenRouter billing required. Add credits at openrouter.ai");
+      if (res.status === 429) throw new HttpError(429, "Rate limit exceeded. Please retry shortly.");
+      throw new HttpError(502, `OpenRouter error (${res.status})`);
+    }
+
+    return { response: res, provider: "openrouter", model };
   }
 
-  const orMessages = attachImagesToLastUserMessage(messages, pdfImages);
-
-  console.log(`Attempting openrouter (${model})`);
-
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${openrouterKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": requestOrigin || "https://lovable.dev",
-      "X-Title": "Elizade AI",
-    },
-    body: JSON.stringify({
-      model,
-      messages: orMessages,
-      max_tokens: 4096,
-      stream,
-    }),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    console.error(`OpenRouter failed (${res.status}): ${errText}`);
-
-    if (res.status === 401) {
-      throw new HttpError(401, "OpenRouter authentication failed. Please update OPENROUTER_API_KEY.");
-    }
-    if (res.status === 402) {
-      throw new HttpError(402, "OpenRouter billing/credits required.");
-    }
-    if (res.status === 429) {
-      throw new HttpError(429, "OpenRouter rate limit exceeded. Please retry shortly.");
-    }
-
-    throw new HttpError(502, `OpenRouter error (${res.status}).`);
-  }
-
-  return { response: res, provider: "openrouter", model };
+  throw new HttpError(503, "No AI providers available. Please configure API keys.");
 }
 
 
