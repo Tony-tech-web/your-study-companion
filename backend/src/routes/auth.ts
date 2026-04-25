@@ -101,8 +101,8 @@ router.post("/signup", async (req, res: Response) => {
       options: {
         data: {
           full_name,
-          matric_number,
-          phone_number,
+          matric_number: matric_number?.trim() || null,
+          phone_number: phone_number?.trim() || null,
           username,
         },
       },
