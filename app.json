@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Your Study Companion",
+    "slug": "your-study-companion",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "studycompanion",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.elzarai.studycompanion"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0a0a"
+      },
+      "package": "com.elzarai.studycompanion"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
