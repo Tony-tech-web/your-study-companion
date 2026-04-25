@@ -203,34 +203,20 @@ async function callAI(
   stream = true,
   requestOrigin?: string,
 ) {
-  // Try Gemini first (free tier available), fall back to OpenRouter
   const geminiKey = Deno.env.get("GEMINI_API_KEY");
+  const openaiKey = Deno.env.get("OPENAI_API_KEY");
   const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
 
-  // auto = try Gemini first, fall back to OpenRouter
-  const isAuto = !providerId || providerId === "auto";
-  const preferOpenRouter = providerId === "openrouter" && !isAuto;
+  const orMessages = attachImagesToLastUserMessage(messages, pdfImages);
 
-  // --- Try Gemini ---
-  if (geminiKey && (isAuto || !preferOpenRouter)) {
-    try {
-      console.log(`Attempting Gemini (${providerId})`);
-      return await callGemini(messages, providerId, stream);
-    } catch (e: any) {
-      console.warn("Gemini failed, trying OpenRouter:", e.message);
-      // Fall through to OpenRouter
-    }
-  }
+  // ─── Explicit routing by providerId ───────────────────────────────────────
+  // "google" → Gemini Flash directly (free, no OpenRouter)
+  // "google-pro" → Gemini Pro directly (free, no OpenRouter)
+  // "openrouter" → GPT-4o via OpenRouter (requires credits)
+  // "auto" → try Gemini first, then OpenAI direct, then OpenRouter as last resort
 
-  // --- Try OpenRouter ---
-  if (openrouterKey) {
-    let model = "google/gemini-2.0-flash-lite-001";
-    if (providerId === "openrouter") model = "openai/gpt-4o";
-    else if (providerId === "google-pro") model = "google/gemini-2.0-flash-001";
-
-    const orMessages = attachImagesToLastUserMessage(messages, pdfImages);
-    console.log(`Attempting OpenRouter (${model})`);
-
+  const callOpenRouter = async (model: string) => {
+    if (!openrouterKey) throw new HttpError(503, "OpenRouter API key not configured in Supabase secrets.");
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -241,25 +227,64 @@ async function callAI(
       },
       body: JSON.stringify({ model, messages: orMessages, max_tokens: 4096, stream }),
     });
-
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
       console.error(`OpenRouter failed (${res.status}): ${errText}`);
-      // If OpenRouter billing fails and we haven't tried Gemini yet, try now
-      if ((res.status === 402 || res.status === 401) && geminiKey && preferOpenRouter) {
-        console.warn("OpenRouter billing issue, falling back to Gemini");
-        return await callGemini(messages, "google", stream);
-      }
-      if (res.status === 401) throw new HttpError(401, "OpenRouter authentication failed.");
-      if (res.status === 402) throw new HttpError(402, "OpenRouter billing required. Add credits at openrouter.ai");
+      if (res.status === 401) throw new HttpError(401, "OpenRouter authentication failed. Check OPENROUTER_API_KEY.");
+      if (res.status === 402) throw new HttpError(402, "OpenRouter billing/credits required. Add credits at openrouter.ai or switch to Gemini.");
       if (res.status === 429) throw new HttpError(429, "Rate limit exceeded. Please retry shortly.");
       throw new HttpError(502, `OpenRouter error (${res.status})`);
     }
-
     return { response: res, provider: "openrouter", model };
+  };
+
+  const callOpenAIDirect = async () => {
+    if (!openaiKey) throw new HttpError(503, "OpenAI API key not configured.");
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "gpt-4o-mini", messages: orMessages, max_tokens: 4096, stream }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new HttpError(res.status, `OpenAI error (${res.status}): ${errText}`);
+    }
+    return { response: res, provider: "openai", model: "gpt-4o-mini" };
+  };
+
+  // ── Route by explicit provider ──
+  if (providerId === "openrouter") {
+    return await callOpenRouter("openai/gpt-4o");
   }
 
-  throw new HttpError(503, "No AI providers available. Please configure API keys.");
+  if (providerId === "google" || providerId === "google-pro") {
+    // Use Gemini directly — no OpenRouter fallback for these
+    if (!geminiKey) throw new HttpError(503, "GEMINI_API_KEY not configured in Supabase secrets.");
+    return await callGemini(messages, providerId, stream);
+  }
+
+  // ── Auto mode: cascade through available providers ──
+  if (geminiKey) {
+    try {
+      return await callGemini(messages, "google", stream);
+    } catch (e: any) {
+      console.warn("Auto: Gemini failed, trying next:", e.message);
+    }
+  }
+
+  if (openaiKey) {
+    try {
+      return await callOpenAIDirect();
+    } catch (e: any) {
+      console.warn("Auto: OpenAI direct failed, trying OpenRouter:", e.message);
+    }
+  }
+
+  if (openrouterKey) {
+    return await callOpenRouter("google/gemini-2.0-flash-lite-001");
+  }
+
+  throw new HttpError(503, "No AI providers available. Configure GEMINI_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY in Supabase secrets.");
 }
 
 

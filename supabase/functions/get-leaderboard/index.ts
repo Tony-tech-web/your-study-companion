@@ -14,7 +14,7 @@ async function validateAuth(req: Request): Promise<{ userId: string | null; erro
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const supabaseAnonKey = (Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"))!;
   
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     global: { headers: { Authorization: authHeader } }
@@ -67,7 +67,12 @@ serve(async (req) => {
     // Log for audit
     console.log(`Leaderboard request from user: ${authenticatedUserId}`);
 
-    const { type = "xp", limit = 20 } = await req.json();
+    let type = "xp", limit = 20;
+    try {
+      const body = await req.json();
+      type = body.type || "xp";
+      limit = body.limit || 20;
+    } catch { /* empty body is fine, use defaults */ }
 
     // Cap limit to prevent abuse
     const safeLimit = Math.min(Math.max(1, limit), 50);
