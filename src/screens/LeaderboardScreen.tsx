@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
-import { colors, spacing, radius, typography } from '../lib/theme';
+import { colors, spacing, radius, typography, fontWeight, shadow } from '../lib/theme';
 import { getLeaderboard, LeaderboardResult } from '../services/leaderboard';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -123,19 +123,19 @@ export default function LeaderboardScreen() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl },
+  content: { padding: spacing.md, gap: spacing.md, paddingBottom: 120 },
   center: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
-  title: { color: colors.foreground, fontSize: typography['2xl'], fontWeight: '800' },
+  title: { color: colors.foreground, fontSize: typography.title1, fontWeight: fontWeight.black },
   errorIcon: { fontSize: 48 },
-  errorTitle: { color: colors.foreground, fontSize: typography.lg, fontWeight: '700' },
-  errorText: { color: colors.muted, fontSize: typography.sm, textAlign: 'center', paddingHorizontal: spacing.lg },
+  errorTitle: { color: colors.foreground, fontSize: typography.title3, fontWeight: fontWeight.bold },
+  errorText: { color: colors.muted, fontSize: typography.subheadline, textAlign: 'center', paddingHorizontal: spacing.lg },
   retryBtn: { backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.md },
-  retryBtnText: { color: '#fff', fontWeight: '700' },
-  myRankCard: { backgroundColor: colors.card, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.primary + '50' },
-  myRankLabel: { color: colors.muted, fontSize: typography.xs, marginBottom: spacing.sm },
+  retryBtnText: { color: '#fff', fontWeight: fontWeight.bold },
+  myRankCard: { backgroundColor: colors.cardSolid, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.primary + '50' },
+  myRankLabel: { color: colors.muted, fontSize: typography.footnote, marginBottom: spacing.sm },
   myRankRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   myRankNum: { color: colors.primary, fontSize: typography['3xl'], fontWeight: '900' },
-  myRankXp: { color: colors.foreground, fontSize: typography.lg, fontWeight: '700' },
+  myRankXp: { color: colors.foreground, fontSize: typography.title3, fontWeight: fontWeight.bold },
   myRankTitle: { color: colors.muted, fontSize: typography.xs },
   podium: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.lg },
   podiumItem: { alignItems: 'center', flex: 1 },
@@ -143,16 +143,16 @@ const s = StyleSheet.create({
   podiumSecond: {},
   podiumThird: {},
   podiumMedal: { fontSize: 24, marginBottom: 4 },
-  podiumAvatar: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: colors.border, marginBottom: 4 },
+  podiumAvatar: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: colors.borderSolid, marginBottom: 4 },
   podiumAvatarFirst: { width: 60, height: 60, borderRadius: 30, borderColor: colors.primary },
-  podiumName: { color: colors.foreground, fontSize: typography.xs, fontWeight: '700', textAlign: 'center' },
-  podiumXp: { color: colors.primary, fontSize: 10, fontWeight: '600', marginBottom: 4 },
-  podiumBar: { width: '100%', backgroundColor: colors.card, borderTopLeftRadius: 4, borderTopRightRadius: 4, borderWidth: 1, borderColor: colors.border },
-  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.card, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  podiumName: { color: colors.foreground, fontSize: typography.footnote, fontWeight: fontWeight.bold, textAlign: 'center' },
+  podiumXp: { color: colors.primary, fontSize: 10, fontWeight: fontWeight.semibold, marginBottom: 4 },
+  podiumBar: { width: '100%', backgroundColor: colors.cardSolid, borderTopLeftRadius: 4, borderTopRightRadius: 4, borderWidth: 1, borderColor: colors.border },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.cardSolid, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
   rowMe: { borderColor: colors.primary },
-  rowRank: { color: colors.muted, fontSize: typography.sm, fontWeight: '700', width: 32 },
+  rowRank: { color: colors.muted, fontSize: typography.subheadline, fontWeight: fontWeight.bold, width: 32 },
   rowAvatar: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: colors.border },
-  rowName: { color: colors.foreground, fontSize: typography.sm, fontWeight: '600' },
-  rowTitle: { color: colors.muted, fontSize: typography.xs, marginTop: 1 },
-  rowXp: { color: colors.primary, fontSize: typography.sm, fontWeight: '700' },
+  rowName: { color: colors.foreground, fontSize: typography.subheadline, fontWeight: fontWeight.semibold },
+  rowTitle: { color: colors.muted, fontSize: typography.footnote, marginTop: 1 },
+  rowXp: { color: colors.primary, fontSize: typography.subheadline, fontWeight: fontWeight.bold },
 });

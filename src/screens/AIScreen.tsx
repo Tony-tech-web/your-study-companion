@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
-  Alert,
+  Alert, SafeAreaView, StatusBar,
 } from 'react-native';
-import { colors, spacing, radius, typography } from '../lib/theme';
+import { colors, spacing, radius, typography, fontWeight, shadow } from '../lib/theme';
 import { callEdgeFunction } from '../lib/supabase';
 import { getAIConversations, saveAIConversation, clearAIConversations, AIConversationEntry } from '../services/ai';
 
@@ -125,7 +125,10 @@ export default function AIScreen() {
   if (fetching) return <View style={s.center}><ActivityIndicator color={colors.primary} /></View>;
 
   return (
-    <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
+    <View style={s.root}>
+      <StatusBar barStyle="light-content" />
+      <SafeAreaView style={{ flex: 1 }}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
       {/* Header */}
       <View style={s.header}>
         <View>
@@ -193,6 +196,8 @@ export default function AIScreen() {
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
 
@@ -200,7 +205,7 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card },
-  title: { color: colors.foreground, fontSize: typography.lg, fontWeight: '800' },
+  title: { color: colors.foreground, fontSize: typography.title3, fontWeight: fontWeight.black },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
   statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.green },
   statusText: { color: colors.muted, fontSize: typography.xs },
@@ -208,35 +213,35 @@ const s = StyleSheet.create({
   modelPicker: { flexDirection: 'row', gap: 4 },
   modelBtn: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.sm, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
   modelBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  modelBtnText: { color: colors.muted, fontSize: 10, fontWeight: '600' },
+  modelBtnText: { color: colors.muted, fontSize: 10, fontWeight: fontWeight.semibold },
   modelBtnTextActive: { color: '#fff' },
   clearBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border },
   clearBtnText: { color: colors.muted, fontSize: 10 },
-  list: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl },
+  list: { padding: spacing.md, gap: spacing.md, paddingBottom: 120 },
   msgRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
   msgRowUser: { flexDirection: 'row-reverse' },
   avatar: { width: 32, height: 32, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   avatarUser: { backgroundColor: colors.primary },
-  avatarAI: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
-  avatarText: { color: '#fff', fontSize: typography.xs, fontWeight: '800' },
+  avatarAI: { backgroundColor: colors.cardSolid, borderWidth: 1, borderColor: colors.border },
+  avatarText: { color: '#fff', fontSize: typography.footnote, fontWeight: fontWeight.black },
   bubble: { flex: 1, borderRadius: radius.lg, padding: spacing.md, maxWidth: '85%' },
   bubbleUser: { backgroundColor: colors.primary, borderTopRightRadius: 4 },
-  bubbleAI: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderTopLeftRadius: 4 },
+  bubbleAI: { backgroundColor: colors.cardSolid, borderWidth: 1, borderColor: colors.borderSolid, borderTopLeftRadius: 4 },
   bubbleStreaming: { borderColor: colors.primary },
-  bubbleText: { color: colors.foreground, fontSize: typography.sm, lineHeight: 22 },
+  bubbleText: { color: colors.foreground, fontSize: typography.subheadline, lineHeight: 22 },
   bubbleTextUser: { color: '#fff' },
   cursor: { color: colors.primary },
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm,
-    padding: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.card,
+    padding: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.cardSolid,
   },
   input: {
     flex: 1, backgroundColor: colors.background, borderRadius: radius.lg,
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    color: colors.foreground, fontSize: typography.sm, maxHeight: 120,
-    borderWidth: 1, borderColor: colors.border,
+    color: colors.foreground, fontSize: typography.subheadline, maxHeight: 120,
+    borderWidth: 1, borderColor: colors.borderSolid,
   },
   sendBtn: { width: 40, height: 40, borderRadius: radius.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { opacity: 0.3 },
-  sendBtnText: { color: '#fff', fontSize: typography.lg, fontWeight: '800' },
+  sendBtnText: { color: '#fff', fontSize: typography.title3, fontWeight: fontWeight.black },
 });

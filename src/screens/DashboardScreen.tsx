@@ -1,63 +1,34 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  RefreshControl, ActivityIndicator,
+  RefreshControl, ActivityIndicator, SafeAreaView, StatusBar,
 } from 'react-native';
-import { colors, spacing, radius, typography } from '../lib/theme';
-import { getFullDashboardStats, getTasks, getActivity, FullStats } from '../services/dashboard';
-import { Task, StudyActivity } from '../types';
+import { colors, spacing, radius, typography, fontWeight, shadow } from '../lib/theme';
+import { getFullDashboardStats, getTasks, getActivity } from '../services/dashboard';
 import { useAuth } from '../contexts/AuthContext';
-
-const StatCard = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
-  <View style={s.statCard}>
-    <Text style={s.statValue}>{value}</Text>
-    <Text style={s.statLabel}>{label}</Text>
-    {sub && <Text style={s.statSub}>{sub}</Text>}
-  </View>
-);
-
-const ActivityBar = ({ day, hours, max }: { day: string; hours: number; max: number }) => {
-  const h = max > 0 ? (hours / max) * 80 : 0;
-  return (
-    <View style={s.barWrap}>
-      <View style={s.barTrack}>
-        <View style={[s.barFill, { height: h }]} />
-      </View>
-      <Text style={s.barLabel}>{day}</Text>
-    </View>
-  );
-};
 
 export default function DashboardScreen() {
   const { user, signOut } = useAuth();
-  const [stats, setStats] = useState<FullStats | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [activity, setActivity] = useState<StudyActivity[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [activity, setActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = async () => {
     try {
-      const [s, t, a] = await Promise.allSettled([
-        getFullDashboardStats(),
-        getTasks(),
-        getActivity(),
-      ]);
+      const [s, t, a] = await Promise.allSettled([getFullDashboardStats(), getTasks(), getActivity()]);
       if (s.status === 'fulfilled') setStats(s.value);
-      if (t.status === 'fulfilled') setTasks(t.value.slice(0, 5));
-      if (a.status === 'fulfilled') setActivity(a.value);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+      if (t.status === 'fulfilled') setTasks((t.value as any[]).slice(0, 5));
+      if (a.status === 'fulfilled') setActivity(a.value as any[]);
+    } catch {}
+    finally { setLoading(false); setRefreshing(false); }
   };
 
   useEffect(() => { load(); }, []);
 
-  const maxActivity = Math.max(...activity.map(a => a.hours), 1);
-  const xpProgress = stats ? (stats.user.xp / stats.user.maxXp) : 0;
+  const xpPct = stats ? Math.min((stats.user?.xp / stats.user?.maxXp) * 100, 100) : 0;
+  const maxH = Math.max(...(activity.map((a: any) => a.hours) || [1]), 1);
 
   if (loading) return (
     <View style={s.center}>
@@ -66,106 +37,145 @@ export default function DashboardScreen() {
   );
 
   return (
-    <ScrollView
-      style={s.root}
-      contentContainerStyle={s.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
-    >
-      {/* Header */}
-      <View style={s.header}>
-        <View>
-          <Text style={s.greeting}>Good day,</Text>
-          <Text style={s.name}>{stats?.user.name || user?.email?.split('@')[0] || 'Scholar'} 👋</Text>
-        </View>
-        <TouchableOpacity style={s.signOutBtn} onPress={signOut}>
-          <Text style={s.signOutText}>Sign out</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* XP Bar */}
-      <View style={s.xpCard}>
-        <View style={s.xpRow}>
-          <Text style={s.xpLabel}>Level {stats?.user.level || 1}</Text>
-          <Text style={s.xpValue}>{stats?.user.xp || 0} / {stats?.user.maxXp || 200} XP</Text>
-        </View>
-        <View style={s.xpTrack}>
-          <View style={[s.xpFill, { width: `${Math.min(xpProgress * 100, 100)}%` }]} />
-        </View>
-      </View>
-
-      {/* Stats Grid */}
-      <View style={s.statsGrid}>
-        <StatCard label="Current GPA" value={stats?.currentGpa || '—'} />
-        <StatCard label="AI Sessions" value={String(stats?.aiInteractions || 0)} />
-        <StatCard label="Study Mins" value={String(stats?.studyMinutes || 0)} />
-        <StatCard label="Research" value={`${stats?.researchMinutes || 0}m`} />
-      </View>
-
-      {/* Activity Chart */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Weekly Activity</Text>
-        <View style={s.chart}>
-          {activity.map(a => (
-            <ActivityBar key={a.day} day={a.day} hours={a.hours} max={maxActivity} />
-          ))}
-        </View>
-      </View>
-
-      {/* Recent Tasks */}
-      <View style={s.section}>
-        <Text style={s.sectionTitle}>Study Plans</Text>
-        {tasks.length === 0 ? (
-          <View style={s.emptyWrap}>
-            <Text style={s.emptyText}>No study plans yet</Text>
+    <View style={s.root}>
+      <StatusBar barStyle="light-content" />
+      <SafeAreaView style={s.safe}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.scroll}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
+        >
+          {/* Header */}
+          <View style={s.header}>
+            <View>
+              <Text style={s.greeting}>Good day 👋</Text>
+              <Text style={s.name}>{stats?.user?.name || user?.email?.split('@')[0] || 'Scholar'}</Text>
+            </View>
+            <TouchableOpacity style={s.avatar} onPress={signOut}>
+              <Text style={s.avatarText}>{(stats?.user?.name || 'S')[0].toUpperCase()}</Text>
+            </TouchableOpacity>
           </View>
-        ) : tasks.map(task => (
-          <View key={task.id} style={s.taskCard}>
-            <View style={s.taskDot} />
-            <View style={{ flex: 1 }}>
-              <Text style={s.taskTitle}>{task.title}</Text>
-              <Text style={s.taskSub}>{task.category} · {task.dueDate}</Text>
+
+          {/* XP Card */}
+          <View style={[s.card, s.xpCard]}>
+            <View style={s.xpTop}>
+              <View>
+                <Text style={s.xpLevel}>Level {stats?.user?.level || 1}</Text>
+                <Text style={s.xpTitle}>{stats?.user?.title || 'Freshman Scholar'}</Text>
+              </View>
+              <View style={s.xpBadge}>
+                <Text style={s.xpBadgeText}>{stats?.user?.xp || 0} XP</Text>
+              </View>
+            </View>
+            <View style={s.xpTrack}>
+              <View style={[s.xpFill, { width: `${xpPct}%` }]} />
+            </View>
+            <Text style={s.xpCaption}>{stats?.user?.xp || 0} / {stats?.user?.maxXp || 200} XP to next level</Text>
+          </View>
+
+          {/* Stats */}
+          <Text style={s.sectionTitle}>Overview</Text>
+          <View style={s.statsGrid}>
+            {[
+              { label: 'GPA', value: stats?.currentGpa || '—', icon: '🎓', color: colors.green },
+              { label: 'AI Sessions', value: stats?.aiInteractions || 0, icon: '✨', color: colors.primary },
+              { label: 'Study Mins', value: stats?.studyMinutes || 0, icon: '⏱', color: colors.blue },
+              { label: 'Research', value: `${stats?.researchMinutes || 0}m`, icon: '🔍', color: colors.teal },
+            ].map((item, i) => (
+              <View key={i} style={s.statCard}>
+                <View style={[s.statIcon, { backgroundColor: item.color + '20' }]}>
+                  <Text style={s.statIconEmoji}>{item.icon}</Text>
+                </View>
+                <Text style={[s.statValue, { color: item.color }]}>{String(item.value)}</Text>
+                <Text style={s.statLabel}>{item.label}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Activity */}
+          <Text style={s.sectionTitle}>Weekly Activity</Text>
+          <View style={s.card}>
+            <View style={s.chart}>
+              {activity.map((a: any) => {
+                const h = maxH > 0 ? (a.hours / maxH) * 72 : 0;
+                return (
+                  <View key={a.day} style={s.barCol}>
+                    <View style={s.barTrack}>
+                      <View style={[s.barFill, { height: h }]} />
+                    </View>
+                    <Text style={s.barDay}>{a.day}</Text>
+                  </View>
+                );
+              })}
             </View>
           </View>
-        ))}
-      </View>
-    </ScrollView>
+
+          {/* Tasks */}
+          <Text style={s.sectionTitle}>Recent Plans</Text>
+          {tasks.length === 0 ? (
+            <View style={s.emptyCard}>
+              <Text style={s.emptyText}>No study plans yet — create one in Planner</Text>
+            </View>
+          ) : (
+            <View style={s.card}>
+              {tasks.map((t: any, i: number) => (
+                <View key={t.id} style={[s.taskRow, i < tasks.length - 1 && s.taskBorder]}>
+                  <View style={s.taskDot} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.taskTitle}>{t.title}</Text>
+                    <Text style={s.taskSub}>{t.category}</Text>
+                  </View>
+                  <Text style={s.taskDate}>{t.dueDate}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
+  safe: { flex: 1 },
   center: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.lg },
-  greeting: { color: colors.muted, fontSize: typography.sm },
-  name: { color: colors.foreground, fontSize: typography['2xl'], fontWeight: '800' },
-  signOutBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
-  signOutText: { color: colors.muted, fontSize: typography.xs, fontWeight: '600' },
-  xpCard: { backgroundColor: colors.card, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
-  xpRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.sm },
-  xpLabel: { color: colors.foreground, fontSize: typography.sm, fontWeight: '700' },
-  xpValue: { color: colors.muted, fontSize: typography.xs },
-  xpTrack: { height: 6, backgroundColor: colors.border, borderRadius: radius.full, overflow: 'hidden' },
+  scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  greeting: { color: colors.muted, fontSize: typography.subheadline, fontWeight: fontWeight.regular },
+  name: { color: colors.foreground, fontSize: typography.title2, fontWeight: fontWeight.black, letterSpacing: -0.5, marginTop: 2 },
+  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', ...shadow.sm },
+  avatarText: { color: '#fff', fontSize: typography.body, fontWeight: fontWeight.bold },
+  card: { backgroundColor: colors.cardSolid, borderRadius: radius.xl, padding: spacing.md, borderWidth: 1, borderColor: colors.borderSolid, marginBottom: spacing.md, ...shadow.sm },
+  xpCard: { padding: spacing.md, marginBottom: spacing.lg },
+  xpTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.md },
+  xpLevel: { color: colors.foreground, fontSize: typography.headline, fontWeight: fontWeight.bold },
+  xpTitle: { color: colors.muted, fontSize: typography.footnote, marginTop: 2 },
+  xpBadge: { backgroundColor: colors.primary + '20', paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full },
+  xpBadgeText: { color: colors.primary, fontSize: typography.footnote, fontWeight: fontWeight.bold },
+  xpTrack: { height: 6, backgroundColor: colors.surface, borderRadius: radius.full, overflow: 'hidden' },
   xpFill: { height: '100%', backgroundColor: colors.primary, borderRadius: radius.full },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
-  statCard: {
-    flex: 1, minWidth: '45%', backgroundColor: colors.card, borderRadius: radius.lg,
-    padding: spacing.md, borderWidth: 1, borderColor: colors.border,
-  },
-  statValue: { color: colors.primary, fontSize: typography.xl, fontWeight: '800' },
-  statLabel: { color: colors.muted, fontSize: typography.xs, marginTop: 2 },
-  statSub: { color: colors.muted, fontSize: typography.xs, opacity: 0.6 },
-  section: { marginBottom: spacing.lg },
-  sectionTitle: { color: colors.foreground, fontSize: typography.base, fontWeight: '700', marginBottom: spacing.sm },
-  chart: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', backgroundColor: colors.card, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border, height: 140 },
-  barWrap: { alignItems: 'center', flex: 1 },
-  barTrack: { height: 80, width: 8, backgroundColor: colors.border, borderRadius: radius.full, justifyContent: 'flex-end', overflow: 'hidden' },
+  xpCaption: { color: colors.muted, fontSize: typography.caption1, marginTop: spacing.xs },
+  sectionTitle: { color: colors.secondaryLabel, fontSize: typography.footnote, fontWeight: fontWeight.semibold, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: spacing.sm },
+  statsGrid: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
+  statCard: { flex: 1, backgroundColor: colors.cardSolid, borderRadius: radius.lg, padding: spacing.sm, borderWidth: 1, borderColor: colors.borderSolid, alignItems: 'center', gap: 4 },
+  statIcon: { width: 32, height: 32, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
+  statIconEmoji: { fontSize: 16 },
+  statValue: { fontSize: typography.title3, fontWeight: fontWeight.black, letterSpacing: -0.5 },
+  statLabel: { color: colors.muted, fontSize: typography.caption2, fontWeight: fontWeight.medium, textAlign: 'center' },
+  chart: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 100 },
+  barCol: { flex: 1, alignItems: 'center', gap: 6 },
+  barTrack: { width: 8, height: 72, backgroundColor: colors.surface, borderRadius: radius.full, justifyContent: 'flex-end', overflow: 'hidden' },
   barFill: { backgroundColor: colors.primary, width: '100%', borderRadius: radius.full },
-  barLabel: { color: colors.muted, fontSize: 10, marginTop: 4 },
-  taskCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.card, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.sm },
-  taskDot: { width: 8, height: 8, borderRadius: radius.full, backgroundColor: colors.primary },
-  taskTitle: { color: colors.foreground, fontSize: typography.sm, fontWeight: '600' },
-  taskSub: { color: colors.muted, fontSize: typography.xs, marginTop: 2 },
-  emptyWrap: { backgroundColor: colors.card, borderRadius: radius.lg, padding: spacing.xl, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
-  emptyText: { color: colors.muted, fontSize: typography.sm },
+  barDay: { color: colors.muted, fontSize: typography.caption2 },
+  emptyCard: { backgroundColor: colors.cardSolid, borderRadius: radius.xl, padding: spacing.xl, alignItems: 'center', borderWidth: 1, borderColor: colors.borderSolid },
+  emptyText: { color: colors.muted, fontSize: typography.footnote, textAlign: 'center' },
+  taskRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 12 },
+  taskBorder: { borderBottomWidth: 1, borderBottomColor: colors.separator },
+  taskDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary },
+  taskTitle: { color: colors.foreground, fontSize: typography.subheadline, fontWeight: fontWeight.medium },
+  taskSub: { color: colors.muted, fontSize: typography.caption1, marginTop: 2 },
+  taskDate: { color: colors.muted, fontSize: typography.caption1 },
 });
