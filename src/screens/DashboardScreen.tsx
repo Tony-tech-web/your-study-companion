@@ -3,7 +3,8 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   RefreshControl, ActivityIndicator, SafeAreaView, StatusBar,
 } from 'react-native';
-import { colors, spacing, radius, typography, fontWeight, shadow } from '../lib/theme';
+import { colors, spacing, radius, typography, fontWeight, shadow, TAB_BAR_HEIGHT } from '../lib/theme';
+import { Screen, PageHeader, PageScroll, Card, PrimaryButton, PillButton, StatTile, EmptyState, Sep } from '../components/ScreenKit';
 import { getFullDashboardStats, getTasks, getActivity } from '../services/dashboard';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -37,9 +38,7 @@ export default function DashboardScreen() {
   );
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="light-content" />
-      <SafeAreaView style={s.safe}>
+    <Screen>
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={s.scroll}
@@ -133,8 +132,7 @@ export default function DashboardScreen() {
 
           <View style={{ height: 100 }} />
         </ScrollView>
-      </SafeAreaView>
-    </View>
+  </Screen>
   );
 }
 

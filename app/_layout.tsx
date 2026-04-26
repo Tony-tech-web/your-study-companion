@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../src/contexts/AuthContext';
-import { useRouter, useSegments } from 'expo-router';
 
 function RootLayoutNav() {
   const { session, loading } = useAuth();
@@ -11,16 +11,13 @@ function RootLayoutNav() {
 
   useEffect(() => {
     if (loading) return;
-    const inAuthGroup = segments[0] === 'auth';
-    if (!session && !inAuthGroup) {
-      router.replace('/auth/login');
-    } else if (session && inAuthGroup) {
-      router.replace('/(tabs)');
-    }
+    const inAuth = segments[0] === 'auth';
+    if (!session && !inAuth) router.replace('/auth/login');
+    else if (session && inAuth) router.replace('/(tabs)');
   }, [session, loading, segments]);
 
   return (
-    <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+    <Stack screenOptions={{ headerShown: false, animation: 'fade_from_bottom' }}>
       <Stack.Screen name="auth" />
       <Stack.Screen name="(tabs)" />
     </Stack>
@@ -29,9 +26,11 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <StatusBar style="light" />
-      <RootLayoutNav />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <StatusBar style="light" />
+        <RootLayoutNav />
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

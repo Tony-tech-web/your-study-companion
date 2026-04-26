@@ -4,7 +4,8 @@ import {
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
   Alert, SafeAreaView, StatusBar,
 } from 'react-native';
-import { colors, spacing, radius, typography, fontWeight, shadow } from '../lib/theme';
+import { colors, spacing, radius, typography, fontWeight, shadow, TAB_BAR_HEIGHT } from '../lib/theme';
+import { Screen, PageHeader, PageScroll, Card, PrimaryButton, PillButton, StatTile, EmptyState, Sep } from '../components/ScreenKit';
 import { callEdgeFunction } from '../lib/supabase';
 import { getAIConversations, saveAIConversation, clearAIConversations, AIConversationEntry } from '../services/ai';
 
@@ -125,9 +126,7 @@ export default function AIScreen() {
   if (fetching) return <View style={s.center}><ActivityIndicator color={colors.primary} /></View>;
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="light-content" />
-      <SafeAreaView style={{ flex: 1 }}>
+    <Screen>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
       {/* Header */}
       <View style={s.header}>
@@ -196,8 +195,7 @@ export default function AIScreen() {
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
-      </SafeAreaView>
-    </View>
+  </Screen>
   );
 }
 

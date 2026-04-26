@@ -3,7 +3,8 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar,
   TextInput, ActivityIndicator, RefreshControl, Alert, Linking,
 } from 'react-native';
-import { colors, spacing, radius, typography, fontWeight, shadow } from '../lib/theme';
+import { colors, spacing, radius, typography, fontWeight, shadow, TAB_BAR_HEIGHT } from '../lib/theme';
+import { Screen, PageHeader, PageScroll, Card, PrimaryButton, PillButton, StatTile, EmptyState, Sep } from '../components/ScreenKit';
 import { callEdgeFunction } from '../lib/supabase';
 import { getResearchHistory, deleteResearchEntry } from '../services/research';
 import { ResearchPaper } from '../types';

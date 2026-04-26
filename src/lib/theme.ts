@@ -1,66 +1,39 @@
 import { Dimensions, Platform } from 'react-native';
 
-const { width, height } = Dimensions.get('window');
+export const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
-export const screen = { width, height };
+// The floating tab bar sits 24px from bottom and is 68px tall
+// Plus safe area inset on iPhone (home indicator ~34px)
+export const TAB_BAR_HEIGHT = 68 + 24 + 34; // total bottom clearance needed
 
 export const colors = {
   primary: '#f27d26',
   background: '#000000',
-  card: 'rgba(28,28,30,0.95)',
-  cardSolid: '#1c1c1e',
-  border: 'rgba(255,255,255,0.1)',
-  borderSolid: '#2c2c2e',
-  muted: '#8e8e93',
+  card: '#1c1c1e',       // iOS grouped bg
+  card2: '#2c2c2e',      // iOS secondary grouped bg
+  border: '#38383a',
+  muted: '#8e8e93',      // iOS secondary label
   foreground: '#ffffff',
-  secondaryLabel: '#ebebf5',
-  surface: '#2c2c2e',
-  surfaceElevated: '#3a3a3c',
-  separator: 'rgba(255,255,255,0.08)',
-  red: '#ff453a',
-  green: '#30d158',
-  blue: '#0a84ff',
-  yellow: '#ffd60a',
-  orange: '#ff9f0a',
-  teal: '#5ac8fa',
-  // Liquid glass
-  glass: 'rgba(255,255,255,0.07)',
-  glassBorder: 'rgba(255,255,255,0.12)',
-  glassTint: 'rgba(242,125,38,0.15)',
+  surface: '#1c1c1e',
+  separator: '#38383a',
+  red: '#ff453a',        // iOS red
+  green: '#30d158',      // iOS green
+  blue: '#0a84ff',       // iOS blue
+  yellow: '#ffd60a',     // iOS yellow
+  orange: '#ff9f0a',     // iOS orange
 };
 
 export const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 20,
-  xl: 28,
-  xxl: 44,
+  xs: 4, sm: 8, md: 16, lg: 20, xl: 28, xxl: 44,
 };
 
 export const radius = {
-  xs: 6,
-  sm: 10,
-  md: 13,
-  lg: 16,
-  xl: 20,
-  xxl: 26,
-  full: 9999,
+  sm: 8, md: 12, lg: 16, xl: 22, xxl: 30, full: 9999,
 };
 
-// iOS Dynamic Type scale
 export const typography = {
-  caption2: 11,
-  caption1: 12,
-  footnote: 13,
-  subheadline: 15,
-  callout: 16,
-  body: 17,
-  headline: 17,
-  title3: 20,
-  title2: 22,
-  title1: 28,
-  largeTitle: 34,
+  xs: 11, sm: 13, base: 15, lg: 17, xl: 20,
+  '2xl': 24, '3xl': 28, '4xl': 34,
 };
 
 export const fontWeight = {
@@ -75,30 +48,23 @@ export const fontWeight = {
 export const shadow = {
   sm: {
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.18,
-    shadowRadius: 3,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
   },
   md: {
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
   },
   lg: {
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  colored: {
-    shadowColor: '#f27d26',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 28,
+    elevation: 16,
   },
 };

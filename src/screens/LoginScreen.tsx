@@ -5,7 +5,8 @@ import {
   Alert, SafeAreaView, StatusBar,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { colors, spacing, radius, typography, fontWeight, shadow } from '../lib/theme';
+import { colors, spacing, radius, typography, fontWeight, shadow, TAB_BAR_HEIGHT } from '../lib/theme';
+import { Screen, PageHeader, PageScroll, Card, PrimaryButton, PillButton, StatTile, EmptyState, Sep } from '../components/ScreenKit';
 
 export default function LoginScreen() {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -44,9 +45,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="light-content" />
-      <SafeAreaView style={{ flex: 1 }}>
+    <Screen>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
@@ -141,8 +140,7 @@ export default function LoginScreen() {
             </Text>
           </ScrollView>
         </KeyboardAvoidingView>
-      </SafeAreaView>
-    </View>
+  </Screen>
   );
 }
 
