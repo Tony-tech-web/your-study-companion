@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import * as pdfjs from "npm:pdfjs-dist@3.11.174/legacy/build/pdf.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -105,18 +106,43 @@ serve(async (req) => {
 
     console.info(`PDF downloaded successfully, size: ${fileData.size} bytes`);
 
-    // Note: PDF text extraction is now done client-side with pdfjs-dist
-    // This function serves as a backup for server-side processing if needed
-    
+    // Perform text extraction using pdfjs-dist in Deno
     let extractedText = "";
-    
-    // For now, return a message indicating the PDF was received
-    // The actual text extraction happens client-side in usePdfLibrary.ts
-    extractedText = `[DOCUMENT: ${filePath.split('/').pop()}]
+    let pageCount = 0;
+    const pages: string[] = [];
 
-This PDF has been uploaded successfully. Text extraction is being processed client-side for optimal performance.
-
-If you see this message in the AI chat, please refresh the page and try selecting the PDF again from your library.`;
+    try {
+      const arrayBuffer = await fileData.arrayBuffer();
+      // Ensure pdfjs has standard font data if needed, but for simple text extraction legacy build usually works.
+      const loadingTask = pdfjs.getDocument({
+        data: new Uint8Array(arrayBuffer),
+        useSystemFonts: true,
+        disableFontFace: true,
+      });
+      
+      const pdf = await loadingTask.promise;
+      pageCount = pdf.numPages;
+      
+      for (let i = 1; i <= pageCount; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items
+          .map((item: any) => item.str)
+          .join(" ")
+          .replace(/\\s+/g, " ")
+          .trim();
+        pages.push(pageText);
+      }
+      
+      extractedText = pages.join("\\n\\n");
+      console.info(`Extraction complete: ${pageCount} pages, ${extractedText.length} chars`);
+    } catch (extractErr) {
+      console.error("PDF Extraction error:", extractErr);
+      return new Response(
+        JSON.stringify({ error: "Failed to extract text from PDF." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Log activity using authenticated userId
     try {
@@ -130,7 +156,7 @@ If you see this message in the AI chat, please refresh the page and try selectin
     }
 
     return new Response(
-      JSON.stringify({ text: extractedText, success: true }),
+      JSON.stringify({ text: extractedText, pageCount, pages, success: true }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
