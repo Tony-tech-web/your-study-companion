@@ -155,26 +155,54 @@ function attachImagesToLastUserMessage(messages: any[], pdfImages?: string[]) {
   return next;
 }
 
-// Call Gemini directly via REST API
-async function callGemini(messages: any[], modelId: string, stream: boolean) {
-  const geminiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!geminiKey) throw new HttpError(503, "GEMINI_API_KEY not configured");
-
-  // Map model
-  const geminiModel = modelId === "google-pro" ? "gemini-2.0-flash" : "gemini-2.0-flash-lite";
-
-  // Convert messages — system prompt becomes first user turn if no system role support
+// Normalize messages for Gemini — must alternate user/model, start with user
+function normalizeForGemini(messages: any[]): { contents: any[]; systemInstruction?: string } {
   const systemMsg = messages.find((m: any) => m.role === "system");
   const chatMsgs = messages.filter((m: any) => m.role !== "system");
 
-  const contents = chatMsgs.map((m: any) => ({
+  // Map roles
+  const mapped = chatMsgs.map((m: any) => ({
     role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
+    text: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
   }));
 
+  // Collapse consecutive same-role messages
+  const deduped: { role: string; text: string }[] = [];
+  for (const msg of mapped) {
+    if (deduped.length > 0 && deduped[deduped.length - 1].role === msg.role) {
+      deduped[deduped.length - 1].text += "\n" + msg.text;
+    } else {
+      deduped.push({ ...msg });
+    }
+  }
+
+  // Gemini must start with "user" — if first is "model", prepend a dummy user turn
+  if (deduped.length === 0 || deduped[0].role === "model") {
+    deduped.unshift({ role: "user", text: "Hello" });
+  }
+
+  const contents = deduped.map(m => ({
+    role: m.role,
+    parts: [{ text: m.text }],
+  }));
+
+  return {
+    contents,
+    systemInstruction: systemMsg?.content,
+  };
+}
+
+// Call Gemini directly via REST API
+async function callGemini(messages: any[], modelId: string, stream: boolean) {
+  const geminiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!geminiKey) throw new HttpError(503, "GEMINI_API_KEY not configured in Supabase secrets.");
+
+  const geminiModel = modelId === "google-pro" ? "gemini-2.0-flash" : "gemini-2.0-flash-lite";
+  const { contents, systemInstruction } = normalizeForGemini(messages);
+
   const body: any = { contents };
-  if (systemMsg) {
-    body.system_instruction = { parts: [{ text: systemMsg.content }] };
+  if (systemInstruction) {
+    body.system_instruction = { parts: [{ text: systemInstruction }] };
   }
 
   const endpoint = stream
@@ -190,7 +218,10 @@ async function callGemini(messages: any[], modelId: string, stream: boolean) {
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
     console.error(`Gemini failed (${res.status}): ${errText}`);
-    throw new HttpError(res.status, `Gemini error: ${res.status}`);
+    // 400 = bad request (our formatting issue), 403 = auth, 429 = rate limit
+    // Don't cascade on auth errors — Gemini key is wrong
+    if (res.status === 403) throw new HttpError(403, "Gemini API key invalid or not enabled. Check GEMINI_API_KEY in Supabase secrets.");
+    throw new HttpError(res.status, `Gemini error (${res.status}). Try switching to a different model.`);
   }
 
   return { response: res, provider: "gemini", model: geminiModel };
@@ -263,28 +294,29 @@ async function callAI(
     return await callGemini(messages, providerId, stream);
   }
 
-  // ── Auto mode: cascade through available providers ──
+  // ── Auto mode: Gemini first, OpenAI direct second — never OpenRouter (costs money) ──
   if (geminiKey) {
     try {
       return await callGemini(messages, "google", stream);
     } catch (e: any) {
-      console.warn("Auto: Gemini failed, trying next:", e.message);
+      console.warn("Auto: Gemini failed:", e.message);
+      // If OpenAI key exists, try it
+      if (openaiKey) {
+        try { return await callOpenAIDirect(); } catch (e2: any) {
+          console.warn("Auto: OpenAI failed:", e2.message);
+        }
+      }
+      // Surface Gemini error — don't silently fall to paid OpenRouter
+      throw new HttpError(503, `AI unavailable: ${e.message}. Please try again or select a different model.`);
     }
   }
 
   if (openaiKey) {
-    try {
-      return await callOpenAIDirect();
-    } catch (e: any) {
-      console.warn("Auto: OpenAI direct failed, trying OpenRouter:", e.message);
-    }
+    return await callOpenAIDirect();
   }
 
-  if (openrouterKey) {
-    return await callOpenRouter("google/gemini-2.0-flash-lite-001");
-  }
-
-  throw new HttpError(503, "No AI providers available. Configure GEMINI_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY in Supabase secrets.");
+  // OpenRouter ONLY as explicit choice (providerId === "openrouter"), never in auto mode
+  throw new HttpError(503, "No AI providers available. Configure GEMINI_API_KEY or OPENAI_API_KEY in Supabase secrets.");
 }
 
 
