@@ -285,38 +285,45 @@ async function callAI(
 
   // ── Route by explicit provider ──
   if (providerId === "openrouter") {
+    // Explicitly chose OpenRouter — use it directly, no fallback
+    if (!openrouterKey) throw new HttpError(503, "OpenRouter key not configured. Add OPENROUTER_API_KEY to Supabase secrets.");
     return await callOpenRouter("openai/gpt-4o");
   }
 
-  if (providerId === "google" || providerId === "google-pro") {
-    // Use Gemini directly — no OpenRouter fallback for these
+  if (providerId === "google-pro") {
     if (!geminiKey) throw new HttpError(503, "GEMINI_API_KEY not configured in Supabase secrets.");
-    return await callGemini(messages, providerId, stream);
+    return await callGemini(messages, "google-pro", stream);
   }
 
-  // ── Auto mode: Gemini first, OpenAI direct second — never OpenRouter (costs money) ──
+  if (providerId === "google") {
+    if (!geminiKey) throw new HttpError(503, "GEMINI_API_KEY not configured in Supabase secrets.");
+    return await callGemini(messages, "google", stream);
+  }
+
+  // ── Auto mode ("auto" or unrecognised providerId) ──
+  // Try providers in order: Gemini Flash → OpenAI Direct → fail with clear message
+  // Never auto-route to OpenRouter (costs credits)
+  let lastError = "No AI providers configured.";
+
   if (geminiKey) {
     try {
       return await callGemini(messages, "google", stream);
     } catch (e: any) {
-      console.warn("Auto: Gemini failed:", e.message);
-      // If OpenAI key exists, try it
-      if (openaiKey) {
-        try { return await callOpenAIDirect(); } catch (e2: any) {
-          console.warn("Auto: OpenAI failed:", e2.message);
-        }
-      }
-      // Surface Gemini error — don't silently fall to paid OpenRouter
-      throw new HttpError(503, `AI unavailable: ${e.message}. Please try again or select a different model.`);
+      lastError = e.message || "Gemini unavailable";
+      console.warn("Auto: Gemini failed:", lastError);
     }
   }
 
   if (openaiKey) {
-    return await callOpenAIDirect();
+    try {
+      return await callOpenAIDirect();
+    } catch (e: any) {
+      lastError = e.message || "OpenAI unavailable";
+      console.warn("Auto: OpenAI failed:", lastError);
+    }
   }
 
-  // OpenRouter ONLY as explicit choice (providerId === "openrouter"), never in auto mode
-  throw new HttpError(503, "No AI providers available. Configure GEMINI_API_KEY or OPENAI_API_KEY in Supabase secrets.");
+  throw new HttpError(503, `All AI providers failed. Last error: ${lastError}. Check your API keys in Supabase secrets.`);
 }
 
 
@@ -403,7 +410,7 @@ ${pdfContext.substring(0, 15000)}`;
 
     const { response, provider, model } = await callAI(
       aiMessages,
-      providerId || "google",
+      providerId || "auto",
       pdfImages,
       true,
       requestOrigin,
