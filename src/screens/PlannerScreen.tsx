@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, StatusBar,
   TextInput, Modal, Alert, ActivityIndicator, RefreshControl,
@@ -37,6 +39,7 @@ export default function PlannerScreen() {
 
   useEffect(() => { load(); }, []);
 
+  const insets = useSafeAreaInsets();
   const load = async () => {
     try {
       setPlans(await getStudyPlans());
@@ -145,7 +148,7 @@ No markdown, no explanation.`,
 
   // ── Detail view ──────────────────────────────────────────────────────────
   if (view === 'detail' && selected) return (
-    <View style={s.root}>
+    <View style={[s.root, { paddingTop: insets.top }]}>
       <View style={s.header}>
         <TouchableOpacity onPress={() => { setView('list'); setSchedule([]); }}>
           <Text style={s.backBtn}>← Back</Text>
@@ -190,9 +193,9 @@ No markdown, no explanation.`,
         {schedule.length === 0 && (
           <TouchableOpacity style={s.genBtn} onPress={() => generateSchedule(selected)} disabled={genLoading}>
             {genLoading
-              ? <ActivityIndicator color="#fff" />
+              ? <ActivityIndicator color="#fff" size="small" />
               : <>
-                  <Text style={s.genBtnIcon}>✨</Text>
+                  <Ionicons name="sparkles-outline" size={18} color="#fff" />
                   <Text style={s.genBtnText}>Generate AI Schedule</Text>
                 </>
             }
@@ -305,7 +308,7 @@ No markdown, no explanation.`,
       >
         {plans.length === 0 ? (
           <View style={s.empty}>
-            <Text style={s.emptyIcon}>📚</Text>
+            <Ionicons name="library-outline" size={48} color={colors.muted} style={{ opacity: 0.3 }} />
             <Text style={s.emptyTitle}>No study plans yet</Text>
             <Text style={s.emptyText}>Create your first plan with AI-powered scheduling</Text>
           </View>
@@ -314,12 +317,12 @@ No markdown, no explanation.`,
             <View style={s.planCardHeader}>
               <Text style={s.planName}>{plan.name}</Text>
               <TouchableOpacity onPress={() => handleDelete(plan.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Text style={s.planDelete}>🗑</Text>
+                <Ionicons name="trash-outline" size={16} color={colors.muted} />
               </TouchableOpacity>
             </View>
             <View style={s.planMeta}>
-              <Text style={s.planMetaText}>⏱ {plan.totalHours}h</Text>
-              <Text style={s.planMetaText}>📚 {plan.subjects.length} subjects</Text>
+              <Text style={s.planMetaText}>{plan.totalHours}h</Text>
+              <Text style={s.planMetaText}>{plan.subjects.length} subjects</Text>
               <Text style={[s.planProgress, { color: plan.progress > 0 ? colors.primary : colors.muted }]}>
                 {plan.progress}%
               </Text>
@@ -362,7 +365,7 @@ No markdown, no explanation.`,
               <TouchableOpacity style={s.aiBtn} onPress={handleAISuggest} disabled={aiSuggestLoading}>
                 {aiSuggestLoading
                   ? <ActivityIndicator color={colors.primary} size="small" />
-                  : <Text style={s.aiBtnText}>✨ AI Suggest</Text>}
+                  : <Ionicons name="sparkles-outline" size={12} color={colors.primary} /><Text style={s.aiBtnText}>AI Suggest</Text>}
               </TouchableOpacity>
             </View>
             <TextInput style={[s.input, { minHeight: 80 }]} value={subjects} onChangeText={setSubjects}

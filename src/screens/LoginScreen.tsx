@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
-  Alert, SafeAreaView, StatusBar,
+  Alert, SafeAreaView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { colors, spacing, radius, typography, fontWeight, shadow, TAB_BAR_HEIGHT } from '../lib/theme';
-import { Screen, PageHeader, PageScroll, Card, PrimaryButton, PillButton, StatTile, EmptyState, Sep } from '../components/ScreenKit';
+import { colors, spacing, radius, typography, fontWeight, shadow } from '../lib/theme';
 
 export default function LoginScreen() {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -15,170 +15,204 @@ export default function LoginScreen() {
   const [fullName, setFullName] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   const handleAuth = async () => {
-    if (!email || !password) { Alert.alert('Missing fields', 'Please enter your email and password'); return; }
-    setLoading(true); setSuccess('');
+    setError(''); setSuccess('');
+    if (!email.trim() || !password) { setError('Please enter your email and password'); return; }
+    if (mode === 'signup' && !fullName.trim()) { setError('Please enter your full name'); return; }
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+
+    setLoading(true);
     try {
       if (mode === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        if (error) {
-          if (error.message?.includes('Invalid login') || error.message?.includes('not confirmed')) {
-            throw new Error('Invalid credentials. If you just signed up, check your email first.');
-          }
-          throw error;
+        const { error: e } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        if (e) {
+          if (e.message.toLowerCase().includes('invalid')) {
+            setError('Invalid email or password. If you just signed up, confirm your email first.');
+          } else { setError(e.message); }
         }
       } else {
-        if (!fullName.trim()) { Alert.alert('Required', 'Please enter your full name'); setLoading(false); return; }
-        const { error } = await supabase.auth.signUp({
+        const { error: e } = await supabase.auth.signUp({
           email: email.trim(), password,
           options: { data: { full_name: fullName.trim() } },
         });
-        if (error) throw error;
-        setSuccess('Account created! Check your inbox and confirm your email before signing in.');
-        setMode('login');
+        if (e) { setError(e.message); }
+        else {
+          setSuccess('Account created! Check your email to confirm before signing in.');
+          setMode('login'); setPassword('');
+        }
       }
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
+    } catch (e: any) {
+      setError(e.message || 'Authentication failed');
     } finally { setLoading(false); }
   };
 
   return (
-    <Screen>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+    <SafeAreaView style={s.safe}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
-            {/* Logo */}
-            <View style={s.logoSection}>
-              <View style={s.logoRing}>
-                <View style={s.logoCore}><Text style={s.logoText}>SC</Text></View>
+          {/* Logo */}
+          <View style={s.logo}>
+            <View style={s.logoRing}>
+              <View style={s.logoInner}>
+                <Text style={s.logoLetters}>SC</Text>
               </View>
-              <Text style={s.appName}>Study Companion</Text>
-              <Text style={s.appSub}>Your AI-powered academic edge</Text>
             </View>
+            <Text style={s.appName}>Study Companion</Text>
+            <Text style={s.tagline}>Your AI-powered academic edge</Text>
+          </View>
 
-            {/* Success banner */}
-            {success ? (
-              <View style={s.successBanner}>
-                <Text style={s.successText}>✅ {success}</Text>
-              </View>
-            ) : null}
+          {/* Mode toggle */}
+          <View style={s.toggle}>
+            {(['login', 'signup'] as const).map(m => (
+              <TouchableOpacity key={m} style={[s.toggleBtn, mode === m && s.toggleBtnOn]} onPress={() => { setMode(m); setError(''); setSuccess(''); }}>
+                <Text style={[s.toggleText, mode === m && s.toggleTextOn]}>{m === 'login' ? 'Sign In' : 'Create Account'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-            {/* Segment control */}
-            <View style={s.segment}>
-              <TouchableOpacity style={[s.segBtn, mode === 'login' && s.segBtnActive]} onPress={() => setMode('login')}>
-                <Text style={[s.segBtnText, mode === 'login' && s.segBtnTextActive]}>Sign In</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[s.segBtn, mode === 'signup' && s.segBtnActive]} onPress={() => setMode('signup')}>
-                <Text style={[s.segBtnText, mode === 'signup' && s.segBtnTextActive]}>Create Account</Text>
-              </TouchableOpacity>
+          {/* Alerts */}
+          {error ? (
+            <View style={s.errorBanner}>
+              <Ionicons name="alert-circle" size={15} color={colors.red} />
+              <Text style={s.errorText}>{error}</Text>
             </View>
+          ) : success ? (
+            <View style={s.successBanner}>
+              <Ionicons name="checkmark-circle" size={15} color={colors.green} />
+              <Text style={s.successText}>{success}</Text>
+            </View>
+          ) : null}
 
-            {/* Inputs */}
-            <View style={s.form}>
-              {mode === 'signup' && (
-                <View style={[s.inputGroup, s.inputGroupTop]}>
+          {/* Form */}
+          <View style={s.form}>
+            {mode === 'signup' && (
+              <View style={s.field}>
+                <Text style={s.label}>Full Name</Text>
+                <View style={s.inputRow}>
+                  <Ionicons name="person-outline" size={16} color={colors.muted} style={s.inputIcon} />
                   <TextInput style={s.input} value={fullName} onChangeText={setFullName}
-                    placeholder="Full Name" placeholderTextColor={colors.muted}
-                    autoCapitalize="words" />
+                    placeholder="Your full name" placeholderTextColor={colors.muted}
+                    autoCapitalize="words" returnKeyType="next" />
                 </View>
-              )}
-              <View style={[s.inputGroup, mode === 'signup' ? s.inputGroupMid : s.inputGroupTop]}>
-                <TextInput style={s.input} value={email} onChangeText={setEmail}
-                  placeholder="Email Address" placeholderTextColor={colors.muted}
-                  autoCapitalize="none" keyboardType="email-address" />
               </View>
-              <View style={[s.inputGroup, s.inputGroupBottom]}>
+            )}
+
+            <View style={s.field}>
+              <Text style={s.label}>Email Address</Text>
+              <View style={s.inputRow}>
+                <Ionicons name="mail-outline" size={16} color={colors.muted} style={s.inputIcon} />
+                <TextInput style={s.input} value={email} onChangeText={setEmail}
+                  placeholder="you@university.edu" placeholderTextColor={colors.muted}
+                  autoCapitalize="none" keyboardType="email-address" returnKeyType="next" />
+              </View>
+            </View>
+
+            <View style={s.field}>
+              <View style={s.labelRow}>
+                <Text style={s.label}>Password</Text>
+                {mode === 'login' && <TouchableOpacity><Text style={s.forgot}>Forgot password?</Text></TouchableOpacity>}
+              </View>
+              <View style={s.inputRow}>
+                <Ionicons name="lock-closed-outline" size={16} color={colors.muted} style={s.inputIcon} />
                 <TextInput style={[s.input, { flex: 1 }]} value={password} onChangeText={setPassword}
-                  placeholder="Password" placeholderTextColor={colors.muted}
-                  secureTextEntry={!showPass} onSubmitEditing={handleAuth} />
+                  placeholder="••••••••" placeholderTextColor={colors.muted}
+                  secureTextEntry={!showPass} returnKeyType="done" onSubmitEditing={handleAuth} />
                 <TouchableOpacity onPress={() => setShowPass(v => !v)} style={s.eyeBtn}>
-                  <Text style={s.eyeText}>{showPass ? '🙈' : '👁️'}</Text>
+                  <Ionicons name={showPass ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.muted} />
                 </TouchableOpacity>
               </View>
             </View>
 
-            {mode === 'login' && (
-              <TouchableOpacity style={s.forgotRow}>
-                <Text style={s.forgotText}>Forgot Password?</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Primary CTA */}
-            <TouchableOpacity style={[s.cta, loading && s.ctaDisabled]} onPress={handleAuth} disabled={loading} activeOpacity={0.85}>
-              {loading ? <ActivityIndicator color={colors.background} /> : <Text style={s.ctaText}>{mode === 'login' ? 'Sign In' : 'Create Account'}</Text>}
+            <TouchableOpacity style={[s.primaryBtn, loading && { opacity: 0.6 }]} onPress={handleAuth} disabled={loading} activeOpacity={0.85}>
+              {loading
+                ? <ActivityIndicator color={colors.background} size="small" />
+                : <Text style={s.primaryBtnText}>{mode === 'login' ? 'Login' : 'Create Account'}</Text>}
             </TouchableOpacity>
+          </View>
 
-            {/* Divider */}
-            <View style={s.divider}>
-              <View style={s.divLine} />
-              <Text style={s.divText}>or continue with</Text>
-              <View style={s.divLine} />
-            </View>
+          {/* Divider */}
+          <View style={s.divider}>
+            <View style={s.dividerLine} />
+            <Text style={s.dividerText}>or</Text>
+            <View style={s.dividerLine} />
+          </View>
 
-            {/* Social icons — pill row like reference */}
+          {/* Social — real buttons, no fake alerts */}
+          <View style={s.socialWrap}>
+            <Text style={s.socialHint}>Join With Your Favourite Social Media Account</Text>
             <View style={s.socialRow}>
               {[
-                { label: 'Google', emoji: 'G', color: '#4285F4' },
-                { label: 'Facebook', emoji: 'f', color: '#1877F2' },
-                { label: 'X', emoji: '𝕏', color: '#fff' },
-                { label: 'Apple', emoji: '', color: '#fff' },
+                { icon: 'logo-google' as const, label: 'Google', provider: 'google' as const },
+                { icon: 'logo-facebook' as const, label: 'Facebook', provider: 'facebook' as const },
+                { icon: 'logo-apple' as const, label: 'Apple', provider: 'apple' as const },
               ].map(p => (
-                <TouchableOpacity key={p.label} style={s.socialBtn}
-                  onPress={() => Alert.alert('Coming Soon', `${p.label} sign-in coming soon`)}>
-                  <Text style={[s.socialBtnText, { color: p.color }]}>{p.emoji}</Text>
+                <TouchableOpacity key={p.provider} style={s.socialBtn}
+                  onPress={async () => {
+                    const { error: e } = await supabase.auth.signInWithOAuth({
+                      provider: p.provider,
+                      options: { redirectTo: 'studycompanion://auth/callback' },
+                    });
+                    if (e) setError(e.message);
+                  }}
+                  activeOpacity={0.7}>
+                  <Ionicons name={p.icon} size={22} color={colors.foreground} />
                 </TouchableOpacity>
               ))}
             </View>
+          </View>
 
-            <Text style={s.terms}>
-              By signing in you agree to our{' '}
-              <Text style={s.termsLink}>Terms of Service</Text>
-              {' '}and{' '}
-              <Text style={s.termsLink}>Privacy Policy</Text>
-            </Text>
-          </ScrollView>
-        </KeyboardAvoidingView>
-  </Screen>
+          <Text style={s.terms}>
+            By signing in, you agree to our{' '}
+            <Text style={s.termsLink}>Terms of Service</Text>
+            {' '}and{' '}
+            <Text style={s.termsLink}>Privacy Policy</Text>
+          </Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.background },
-  scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 60 },
-  logoSection: { alignItems: 'center', paddingVertical: spacing.xl },
+  safe: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.xxl },
+  logo: { alignItems: 'center', marginBottom: spacing.xl },
   logoRing: { width: 90, height: 90, borderRadius: 45, borderWidth: 1.5, borderColor: colors.primary + '50', alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
-  logoCore: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', ...shadow.colored },
-  logoText: { color: '#fff', fontSize: typography.title2, fontWeight: fontWeight.black, letterSpacing: -1 },
-  appName: { color: colors.foreground, fontSize: typography.title2, fontWeight: fontWeight.black, letterSpacing: -0.5 },
-  appSub: { color: colors.muted, fontSize: typography.subheadline, marginTop: 4 },
-  successBanner: { backgroundColor: colors.green + '15', borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.green + '30', marginBottom: spacing.md },
-  successText: { color: colors.green, fontSize: typography.footnote, lineHeight: 20 },
-  segment: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.lg, padding: 3, marginBottom: spacing.lg },
-  segBtn: { flex: 1, paddingVertical: 9, borderRadius: radius.md, alignItems: 'center' },
-  segBtnActive: { backgroundColor: colors.cardSolid, ...shadow.sm },
-  segBtnText: { color: colors.muted, fontSize: typography.subheadline, fontWeight: fontWeight.medium },
-  segBtnTextActive: { color: colors.foreground, fontWeight: fontWeight.semibold },
-  form: { borderRadius: radius.xl, overflow: 'hidden', borderWidth: 1, borderColor: colors.borderSolid, marginBottom: spacing.sm },
-  inputGroup: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.cardSolid, borderBottomWidth: 1, borderBottomColor: colors.separator, paddingHorizontal: spacing.md, height: 52 },
-  inputGroupTop: { borderBottomWidth: 1 },
-  inputGroupMid: { borderBottomWidth: 1 },
-  inputGroupBottom: { borderBottomWidth: 0 },
-  input: { flex: 1, color: colors.foreground, fontSize: typography.body },
+  logoInner: { width: 74, height: 74, borderRadius: 37, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  logoLetters: { color: '#fff', fontSize: 26, fontWeight: fontWeight.black, letterSpacing: -1 },
+  appName: { color: colors.foreground, fontSize: typography['2xl'], fontWeight: fontWeight.heavy, letterSpacing: -0.5 },
+  tagline: { color: colors.muted, fontSize: typography.sm, marginTop: 4 },
+  toggle: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: radius.xl, padding: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, marginBottom: spacing.md },
+  toggleBtn: { flex: 1, paddingVertical: 11, borderRadius: radius.lg, alignItems: 'center' },
+  toggleBtnOn: { backgroundColor: colors.foreground },
+  toggleText: { color: colors.muted, fontSize: typography.sm, fontWeight: fontWeight.semibold },
+  toggleTextOn: { color: colors.background },
+  errorBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: colors.red + '15', borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.red + '30' },
+  errorText: { color: colors.red, fontSize: typography.sm, flex: 1, lineHeight: 18 },
+  successBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: colors.green + '15', borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.green + '30' },
+  successText: { color: colors.green, fontSize: typography.sm, flex: 1, lineHeight: 18 },
+  form: { backgroundColor: colors.card, borderRadius: radius.xl, padding: spacing.lg, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, gap: spacing.md, marginBottom: spacing.md, ...shadow.sm },
+  field: { gap: 6 },
+  label: { color: colors.muted, fontSize: typography.xs, fontWeight: fontWeight.semibold, textTransform: 'uppercase', letterSpacing: 0.6 },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  forgot: { color: colors.primary, fontSize: typography.xs, fontWeight: fontWeight.semibold },
+  inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: spacing.md, height: 50 },
+  inputIcon: { marginRight: spacing.sm },
+  input: { flex: 1, color: colors.foreground, fontSize: typography.base },
   eyeBtn: { padding: spacing.xs },
-  eyeText: { fontSize: 16 },
-  forgotRow: { alignItems: 'flex-end', marginBottom: spacing.lg, marginTop: spacing.xs },
-  forgotText: { color: colors.primary, fontSize: typography.footnote, fontWeight: fontWeight.medium },
-  cta: { backgroundColor: colors.foreground, borderRadius: radius.xl, height: 56, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg, ...shadow.sm },
-  ctaDisabled: { opacity: 0.5 },
-  ctaText: { color: colors.background, fontSize: typography.body, fontWeight: fontWeight.bold, letterSpacing: -0.2 },
-  divider: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
-  divLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.borderSolid },
-  divText: { color: colors.muted, fontSize: typography.footnote },
-  socialRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.md, marginBottom: spacing.xl },
-  socialBtn: { width: 60, height: 60, borderRadius: radius.xl, backgroundColor: colors.cardSolid, borderWidth: 1, borderColor: colors.borderSolid, alignItems: 'center', justifyContent: 'center', ...shadow.sm },
-  socialBtnText: { fontSize: 20, fontWeight: fontWeight.bold },
-  terms: { color: colors.muted, fontSize: typography.caption1, textAlign: 'center', lineHeight: 18 },
-  termsLink: { color: colors.foreground, fontWeight: fontWeight.medium },
+  primaryBtn: { backgroundColor: colors.foreground, borderRadius: radius.lg, height: 52, alignItems: 'center', justifyContent: 'center', marginTop: spacing.xs, ...shadow.sm },
+  primaryBtnText: { color: colors.background, fontSize: typography.base, fontWeight: fontWeight.black, letterSpacing: -0.3 },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginVertical: spacing.md },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+  dividerText: { color: colors.muted, fontSize: typography.sm },
+  socialWrap: { backgroundColor: colors.card, borderRadius: radius.xl, padding: spacing.lg, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, alignItems: 'center', gap: spacing.md },
+  socialHint: { color: colors.muted, fontSize: typography.xs, textAlign: 'center', lineHeight: 18 },
+  socialRow: { flexDirection: 'row', gap: spacing.lg },
+  socialBtn: { width: 58, height: 58, borderRadius: radius.full, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', ...shadow.sm },
+  terms: { color: colors.muted, fontSize: typography.xs, textAlign: 'center', marginTop: spacing.lg, lineHeight: 18 },
+  termsLink: { color: colors.foreground, fontWeight: fontWeight.semibold, textDecorationLine: 'underline' },
 });
