@@ -156,6 +156,25 @@ function attachImagesToLastUserMessage(messages: any[], pdfImages?: string[]) {
 }
 
 // Normalize messages for Gemini — must alternate user/model, start with user
+// Build Gemini contents with optional inline PDF documents
+function buildGeminiContents(messages: any[], pdfDocuments?: Array<{base64: string; fileName: string}>) {
+  const { contents, systemInstruction } = normalizeForGemini(messages);
+  
+  if (pdfDocuments && pdfDocuments.length > 0) {
+    // Attach PDFs to the last user message
+    const lastUserIdx = contents.map((c: any) => c.role).lastIndexOf("user");
+    if (lastUserIdx >= 0) {
+      const pdfParts = pdfDocuments.map(doc => ({
+        inline_data: { mime_type: "application/pdf", data: doc.base64 }
+      }));
+      // Insert PDF parts before the text part
+      contents[lastUserIdx].parts = [...pdfParts, ...contents[lastUserIdx].parts];
+    }
+  }
+  
+  return { contents, systemInstruction };
+}
+
 function normalizeForGemini(messages: any[]): { contents: any[]; systemInstruction?: string } {
   const systemMsg = messages.find((m: any) => m.role === "system");
   const chatMsgs = messages.filter((m: any) => m.role !== "system");
@@ -193,12 +212,12 @@ function normalizeForGemini(messages: any[]): { contents: any[]; systemInstructi
 }
 
 // Call Gemini directly via REST API
-async function callGemini(messages: any[], modelId: string, stream: boolean) {
+async function callGemini(messages: any[], modelId: string, stream: boolean, pdfDocuments?: Array<{base64: string; fileName: string}>) {
   const geminiKey = Deno.env.get("GEMINI_API_KEY");
   if (!geminiKey) throw new HttpError(503, "GEMINI_API_KEY not configured in Supabase secrets.");
 
   const geminiModel = modelId === "google-pro" ? "gemini-2.0-flash" : "gemini-2.0-flash-lite";
-  const { contents, systemInstruction } = normalizeForGemini(messages);
+  const { contents, systemInstruction } = buildGeminiContents(messages, pdfDocuments);
 
   const body: any = { contents };
   if (systemInstruction) {
@@ -233,6 +252,7 @@ async function callAI(
   pdfImages?: string[],
   stream = true,
   requestOrigin?: string,
+  pdfDocuments?: Array<{base64: string; fileName: string}>,
 ) {
   const geminiKey = Deno.env.get("GEMINI_API_KEY");
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
@@ -292,12 +312,12 @@ async function callAI(
 
   if (providerId === "google-pro") {
     if (!geminiKey) throw new HttpError(503, "GEMINI_API_KEY not configured in Supabase secrets.");
-    return await callGemini(messages, "google-pro", stream);
+    return await callGemini(messages, "google-pro", stream, pdfDocuments);
   }
 
   if (providerId === "google") {
     if (!geminiKey) throw new HttpError(503, "GEMINI_API_KEY not configured in Supabase secrets.");
-    return await callGemini(messages, "google", stream);
+    return await callGemini(messages, "google", stream, pdfDocuments);
   }
 
   // ── Auto mode ("auto" or unrecognised providerId) ──
@@ -307,7 +327,7 @@ async function callAI(
 
   if (geminiKey) {
     try {
-      return await callGemini(messages, "google", stream);
+      return await callGemini(messages, "google", stream, pdfDocuments);
     } catch (e: any) {
       lastError = e.message || "Gemini unavailable";
       console.warn("Auto: Gemini failed:", lastError);
@@ -342,7 +362,7 @@ serve(async (req) => {
       );
     }
 
-    const { messages, providerId, pdfContext, pdfImages, ocrContext, mode, scanProgress } = await req.json();
+    const { messages, providerId, pdfContext, pdfImages, ocrContext, mode, scanProgress, pdfDocuments } = await req.json();
 
     // Log for audit
     console.log(`AI chat request from user: ${userId}`);
@@ -414,6 +434,7 @@ ${pdfContext.substring(0, 15000)}`;
       pdfImages,
       true,
       requestOrigin,
+      pdfDocuments,
     );
 
     // Handle streaming based on provider
