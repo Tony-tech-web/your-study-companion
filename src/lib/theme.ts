@@ -4,7 +4,7 @@ export const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 // The floating tab bar sits 24px from bottom and is 68px tall
 // Plus safe area inset on iPhone (home indicator ~34px)
-export const TAB_BAR_HEIGHT = 68 + 24 + 34; // total bottom clearance needed
+export const TAB_BAR_HEIGHT = 64 + 24 + 34; // tab(64) + offset(24) + home-indicator(34)
 
 export const colors = {
   primary: '#f27d26',

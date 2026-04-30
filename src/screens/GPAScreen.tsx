@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, radius, typography, fontWeight, TAB_BAR_HEIGHT, shadow } from '../lib/theme';
 import { getGPARecords, createGPARecord, deleteGPARecord } from '../services/gpa';
 import { GPARecord } from '../types';
-import { useDialog } from '../hooks/useDialog';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 const GPA_CLASS = (gpa: number) => {
   if (gpa >= 4.5) return { label: 'First Class',    color: colors.primary };
@@ -24,7 +24,7 @@ const SkeletonBox = ({ h = 80 }: { h?: number }) => (
 
 export default function GPAScreen() {
   const insets = useSafeAreaInsets();
-  const { confirm, alert } = useDialog();
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [records, setRecords] = useState<GPARecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -70,11 +70,12 @@ export default function GPAScreen() {
     finally { setSaving(false); }
   };
 
-  const handleDelete = async (id: string) => {
-    const ok = await confirm('Remove this GPA record permanently?');
-    if (!ok) return;
-    await deleteGPARecord(id).catch(() => {});
-    setRecords(p => p.filter(r => r.id !== id));
+  const handleDelete = (id: string) => setDeleteId(id);
+  const confirmDelete = async () => {
+    if (!deleteId) return;
+    await deleteGPARecord(deleteId).catch(() => {});
+    setRecords(p => p.filter(r => r.id !== deleteId));
+    setDeleteId(null);
   };
 
   if (loading) return (
@@ -90,6 +91,14 @@ export default function GPAScreen() {
 
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
+      <ConfirmDialog
+        visible={!!deleteId}
+        title="Delete Record"
+        message="Remove this GPA record permanently?"
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteId(null)}
+      />
       <View style={s.header}>
         <Text style={s.title}>GPA Tracker</Text>
         <TouchableOpacity style={s.addBtn} onPress={() => setShowAdd(true)} activeOpacity={0.8}>
