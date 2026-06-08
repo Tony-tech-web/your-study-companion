@@ -47,7 +47,12 @@ router.get("/", async (_req: Request, res: Response) => {
         signal: AbortSignal.timeout(8000),
       });
       if (r.ok) {
-        edgeStatus = await r.json();
+        const payload = await r.json();
+        if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+          edgeStatus = Object.fromEntries(
+            Object.entries(payload).map(([key, value]) => [key, Boolean(value)])
+          );
+        }
       }
     } catch (e) {
       console.error("[modelHealth] edge ping failed:", e);

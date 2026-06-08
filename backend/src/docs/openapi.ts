@@ -195,6 +195,31 @@ registry.registerPath({
   }
 });
 
+// Public Metrics
+registry.registerPath({
+  method: "get",
+  path: "/api/public/landing-metrics",
+  tags: ["System"],
+  summary: "Public landing page metrics",
+  description: "Fetch read-only aggregate metrics computed from production database tables for unauthenticated landing pages.",
+  responses: {
+    200: {
+      description: "Landing metrics",
+      ...json(z.object({
+        generated_at: z.string(),
+        metrics: z.array(z.object({
+          key: z.enum(["active_students", "ai_interactions", "study_hours", "processed_materials"]),
+          label: z.string(),
+          value: z.number().nullable(),
+          unit: z.enum(["count", "hours"]),
+          source: z.string(),
+        })),
+        unavailable: z.array(z.string()),
+      }))
+    }
+  }
+});
+
 // User Stats
 registry.registerPath({ method: "get", path: "/api/stats/me", tags: ["User Stats"], security, summary: "Get my study stats", description: "Fetch XP, level, and study time for the current user.", responses: { 200: { description: "Stats", ...json(UserStatsSchema) }, 401: { description: "Unauthorized", ...json(errorResponse) } } });
 registry.registerPath({ method: "put", path: "/api/stats/me", tags: ["User Stats"], security, summary: "Update my study stats", description: "Update or increment user progress stats.", request: { body: json(UpdateUserStatsSchema) }, responses: { 200: { description: "Updated", ...json(UserStatsSchema) }, 401: { description: "Unauthorized", ...json(errorResponse) } } });
