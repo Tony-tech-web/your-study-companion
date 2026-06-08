@@ -397,7 +397,13 @@ serve(async (req) => {
     }
 
     // Build system prompt based on mode
-    let systemPrompt = `You are Elizade AI, an intelligent study assistant for university students. Be concise, helpful, and academically rigorous.`;
+    let systemPrompt = `You are Elizade AI, an intelligent study assistant for university students. Be concise, helpful, and academically rigorous.
+
+STYLE RULES:
+- Use mature academic language and readable structure.
+- Prefer short headings, compact paragraphs, and bullets.
+- Do not use emoji, decorative glyphs, or social-media style labels.
+- Do not use markdown pipe tables unless the student explicitly asks for a table. For comparisons, use bullets with clear labels.`;
 
     if (pdfContext) {
       if (mode === "teach") {
@@ -409,6 +415,8 @@ TEACHING MODE ACTIVE:
 - Break down complex topics
 - Ask comprehension questions
 - Reference specific sections from the document
+- Avoid markdown pipe tables; use bullets for comparisons unless the student asks for a table
+- Do not use emoji or decorative glyphs
 
 ${scanProgress ? `Currently viewing pages 1-${scanProgress.current} of ${scanProgress.total} total pages.` : ""}
 
@@ -423,6 +431,7 @@ TESTING RULES:
 - Vary question difficulty
 - Cover key concepts from the material
 - Provide brief explanations after each answer
+- Do not use emoji, decorative glyphs, or markdown pipe tables
 
 DOCUMENT CONTENT:
 ${pdfContext.substring(0, 15000)}`;
