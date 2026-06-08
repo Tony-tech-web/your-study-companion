@@ -30,63 +30,35 @@ async function validateAuth(req: Request): Promise<{ userId: string | null; erro
   return { userId: data.user.id, error: null };
 }
 
-// AI Models with fallback - Try OpenAI first, then Gemini
 async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: string; openrouter?: string }) {
   const errors: string[] = [];
-  
-  // Try OpenRouter first (if configured)
-  if (apiKeys.openrouter) {
-    try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKeys.openrouter}`,
-        },
-        body: JSON.stringify({
-          model: "openai/gpt-4-turbo",
-          messages,
-          max_tokens: 8000,
-        }),
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        return data.choices?.[0]?.message?.content || "";
-      }
-      errors.push(`OpenRouter: ${res.status}`);
-    } catch (e) {
-      errors.push(`OpenRouter: ${e}`);
+
+  const callOpenRouter = async (model: string) => {
+    if (!apiKeys.openrouter) throw new Error("OpenRouter key not configured");
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKeys.openrouter}`,
+        "HTTP-Referer": "https://orbit-study-companion.vercel.app",
+        "X-Title": "Orbit Study Companion",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        max_tokens: 8000,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error(`OpenRouter ${model}: ${res.status} ${errText.slice(0, 180)}`);
     }
-  }
-  
-  // Try OpenAI directly
-  if (apiKeys.openai) {
-    try {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKeys.openai}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4-turbo-preview",
-          messages,
-          max_tokens: 8000,
-        }),
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        return data.choices?.[0]?.message?.content || "";
-      }
-      errors.push(`OpenAI: ${res.status}`);
-    } catch (e) {
-      errors.push(`OpenAI: ${e}`);
-    }
-  }
-  
-  // Try Gemini
+
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || "";
+  };
+
   if (apiKeys.gemini) {
     try {
       const systemPromptText = messages.find(m => m.role === "system")?.content;
@@ -116,17 +88,57 @@ async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: stri
           generationConfig: { maxOutputTokens: 8000 },
         }),
       });
-      
+
       if (res.ok) {
         const data = await res.json();
         return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
       }
-      errors.push(`Gemini: ${res.status}`);
+      const errText = await res.text().catch(() => "");
+      errors.push(`Gemini: ${res.status} ${errText.slice(0, 180)}`);
     } catch (e) {
       errors.push(`Gemini: ${e}`);
     }
   }
-  
+
+  if (apiKeys.openai) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKeys.openai}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages,
+          max_tokens: 8000,
+        }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        return data.choices?.[0]?.message?.content || "";
+      }
+      const errText = await res.text().catch(() => "");
+      errors.push(`OpenAI: ${res.status} ${errText.slice(0, 180)}`);
+    } catch (e) {
+      errors.push(`OpenAI: ${e}`);
+    }
+  }
+
+  if (apiKeys.openrouter) {
+    try {
+      return await callOpenRouter("openai/gpt-4o-mini");
+    } catch (e) {
+      errors.push(String(e));
+      try {
+        return await callOpenRouter("openrouter/free");
+      } catch (freeError) {
+        errors.push(String(freeError));
+      }
+    }
+  }
+
   throw new Error(`All AI providers failed: ${errors.join(", ")}`);
 }
 
@@ -187,7 +199,7 @@ serve(async (req) => {
 
     switch (toolType) {
       case "notes":
-        systemPrompt = `You are an expert study notes generator. Create comprehensive, well-organized study notes from the provided content.`;
+        systemPrompt = `You are an expert university study notes generator. Create comprehensive, well-organized study notes from the provided content. Use a mature academic tone. Do not use emoji, decorative glyphs, or social-media style labels.`;
         userPrompt = `Create detailed study notes from this content. ${studyFocus ? `Focus on: ${studyFocus}` : 'Cover all topics comprehensively.'}
 
 Include:
@@ -202,7 +214,7 @@ ${pdfContent.substring(0, 30000)}`;
         break;
 
       case "flashcards":
-        systemPrompt = `You are an expert flashcard creator. Generate effective flashcards for studying and memorization. Return ONLY a JSON array with no additional text.`;
+        systemPrompt = `You are an expert flashcard creator. Generate effective flashcards for studying and memorization. Return ONLY a JSON array with no additional text. Do not use emoji or decorative glyphs.`;
         userPrompt = `Create flashcards from this content. ${studyFocus ? `Focus on: ${studyFocus}` : ''}
 
 Return ONLY a valid JSON array with this exact format (no markdown, no explanation):
@@ -218,7 +230,7 @@ ${pdfContent.substring(0, 30000)}`;
         break;
 
       case "quiz":
-        systemPrompt = `You are an expert quiz generator. Create challenging but fair quiz questions to test understanding. Return ONLY a JSON array with no additional text.`;
+        systemPrompt = `You are an expert quiz generator. Create challenging but fair quiz questions to test understanding. Return ONLY a JSON array with no additional text. Do not use emoji or decorative glyphs.`;
         userPrompt = `Create a quiz from this content. ${studyFocus ? `Focus on: ${studyFocus}` : ''}
 
 Return ONLY a valid JSON array with this exact format (no markdown, no explanation):
@@ -240,7 +252,7 @@ ${pdfContent.substring(0, 30000)}`;
         break;
 
       case "summary":
-        systemPrompt = `You are an expert summarizer. Create concise but comprehensive summaries.`;
+        systemPrompt = `You are an expert university summarizer. Create concise but comprehensive summaries. Use a mature academic tone. Do not use emoji, decorative glyphs, or social-media style labels.`;
         userPrompt = `Summarize this content. ${studyFocus ? `Focus on: ${studyFocus}` : ''}
 
 Provide:
