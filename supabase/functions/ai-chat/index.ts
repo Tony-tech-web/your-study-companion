@@ -298,7 +298,12 @@ async function callAI(
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
-      throw new HttpError(res.status, `OpenAI error (${res.status}): ${errText}`);
+      console.error(`OpenAI failed (${res.status}): ${errText}`);
+      if (res.status === 429 && errText.toLowerCase().includes("quota")) {
+        throw new HttpError(429, "OpenAI quota exceeded. Add billing/credits or use Gemini/OpenRouter.");
+      }
+      if (res.status === 401) throw new HttpError(401, "OpenAI authentication failed. Check OPENAI_API_KEY.");
+      throw new HttpError(res.status, `OpenAI error (${res.status}). Try switching to a different provider.`);
     }
     return { response: res, provider: "openai", model: "gpt-4o-mini" };
   };
@@ -321,8 +326,8 @@ async function callAI(
   }
 
   // ── Auto mode ("auto" or unrecognised providerId) ──
-  // Try providers in order: Gemini Flash → OpenAI Direct → fail with clear message
-  // Never auto-route to OpenRouter (costs credits)
+  // Try providers in order: Gemini Flash -> OpenAI Direct -> OpenRouter fallback.
+  // OpenRouter is used as a final fallback when configured.
   let lastError = "No AI providers configured.";
 
   if (geminiKey) {
@@ -343,7 +348,16 @@ async function callAI(
     }
   }
 
-  throw new HttpError(503, `All AI providers failed. Last error: ${lastError}. Check your API keys in Supabase secrets.`);
+  if (openrouterKey) {
+    try {
+      return await callOpenRouter("openai/gpt-4o-mini");
+    } catch (e: any) {
+      lastError = e.message || "OpenRouter unavailable";
+      console.warn("Auto: OpenRouter failed:", lastError);
+    }
+  }
+
+  throw new HttpError(503, `No AI provider is currently available. Last checked provider: ${lastError}`);
 }
 
 
