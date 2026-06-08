@@ -403,7 +403,10 @@ STYLE RULES:
 - Use mature academic language and readable structure.
 - Prefer short headings, compact paragraphs, and bullets.
 - Do not use emoji, decorative glyphs, or social-media style labels.
-- Do not use markdown pipe tables unless the student explicitly asks for a table. For comparisons, use bullets with clear labels.`;
+- Do not use markdown pipe tables unless the student explicitly asks for a table. For comparisons, use bullets with clear labels.
+- When giving code, always use fenced code blocks with the language name.
+- Code examples must be complete, syntactically valid, and internally consistent. Do not invent broken identifiers or omit operators.
+- After a code block, explain only the important lines or concepts.`;
 
     if (pdfContext) {
       if (mode === "teach") {
@@ -417,6 +420,7 @@ TEACHING MODE ACTIVE:
 - Reference specific sections from the document
 - Avoid markdown pipe tables; use bullets for comparisons unless the student asks for a table
 - Do not use emoji or decorative glyphs
+- Put code examples in fenced code blocks with the language name and verify they are syntactically valid
 
 ${scanProgress ? `Currently viewing pages 1-${scanProgress.current} of ${scanProgress.total} total pages.` : ""}
 
