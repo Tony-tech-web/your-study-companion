@@ -354,6 +354,14 @@ async function callAI(
     } catch (e: any) {
       lastError = e.message || "OpenRouter unavailable";
       console.warn("Auto: OpenRouter failed:", lastError);
+      if (e?.status === 402 || e?.status === 429 || e?.status === 502) {
+        try {
+          return await callOpenRouter("openrouter/free");
+        } catch (freeError: any) {
+          lastError = freeError.message || "OpenRouter free fallback unavailable";
+          console.warn("Auto: OpenRouter free fallback failed:", lastError);
+        }
+      }
     }
   }
 
