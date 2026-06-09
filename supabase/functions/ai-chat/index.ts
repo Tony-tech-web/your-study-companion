@@ -216,7 +216,7 @@ async function callGemini(messages: any[], modelId: string, stream: boolean, pdf
   const geminiKey = Deno.env.get("GEMINI_API_KEY");
   if (!geminiKey) throw new HttpError(503, "GEMINI_API_KEY not configured in Supabase secrets.");
 
-  const geminiModel = modelId === "google-pro" ? "gemini-2.0-flash" : "gemini-2.0-flash-lite";
+  const geminiModel = modelId === "google-pro" ? "gemini-2.5-flash" : "gemini-2.5-flash-lite";
   const { contents, systemInstruction } = buildGeminiContents(messages, pdfDocuments);
 
   const body: any = { contents };
@@ -261,9 +261,9 @@ async function callAI(
   const orMessages = attachImagesToLastUserMessage(messages, pdfImages);
 
   // ─── Explicit routing by providerId ───────────────────────────────────────
-  // "google" → Gemini Flash directly (free, no OpenRouter)
-  // "google-pro" → Gemini Pro directly (free, no OpenRouter)
-  // "openrouter" → GPT-4o via OpenRouter (requires credits)
+  // "google" → Gemini Flash-Lite directly
+  // "google-pro" → Gemini Flash directly
+  // "openrouter" → GPT-4o mini via OpenRouter
   // "auto" → try Gemini first, then OpenAI direct, then OpenRouter as last resort
 
   const callOpenRouter = async (model: string) => {
@@ -312,7 +312,7 @@ async function callAI(
   if (providerId === "openrouter") {
     // Explicitly chose OpenRouter — use it directly, no fallback
     if (!openrouterKey) throw new HttpError(503, "OpenRouter key not configured. Add OPENROUTER_API_KEY to Supabase secrets.");
-    return await callOpenRouter("openai/gpt-4o");
+    return await callOpenRouter("openai/gpt-4o-mini");
   }
 
   if (providerId === "google-pro") {

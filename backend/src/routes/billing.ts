@@ -1,8 +1,10 @@
 import { Router, Request, Response } from "express";
 import crypto from "crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import { getAiUsageSummary, recordAiUsage } from "../lib/aiUsage";
+import { AI_MARGIN_RATE, AI_RATES, SERPER_RATE, estimatePlanAiCost } from "../lib/aiPricing";
 
 type BillingInterval = "two_weeks" | "monthly" | "yearly" | "custom";
 
@@ -13,7 +15,7 @@ type DefaultPlan = {
   amount: number;
   interval: BillingInterval;
   aiTokenLimit: number;
-  providerLimits: Record<string, number | string>;
+  providerLimits: Record<string, unknown>;
   isCustom?: boolean;
   active?: boolean;
 };
@@ -22,33 +24,85 @@ const router = Router();
 
 const paystackSecret = () => process.env.PAYSTACK_SECRET_KEY || "";
 
+const withOwnerMargin = (baseKobo: number) => Math.ceil(baseKobo * (1 + AI_MARGIN_RATE));
+
+function aiMix(
+  profile: string,
+  providers: Record<string, { model: string; tokens: number; role: string }>,
+  serperQueries: number,
+) {
+  const mix = {
+    profile,
+    owner_margin_rate: AI_MARGIN_RATE,
+    rates: AI_RATES,
+    serper: SERPER_RATE,
+    providers,
+    serper_queries: serperQueries,
+    routing: {
+      chat: ["gemini:gemini-2.5-flash-lite", "openai:gpt-4o-mini", "openrouter:openai/gpt-4o-mini"],
+      teach: ["gemini:gemini-2.5-flash-lite", "openai:gpt-4o-mini"],
+      test: ["gemini:gemini-2.5-flash-lite", "openai:gpt-4o-mini"],
+      planner: ["gemini:gemini-2.5-flash-lite", "openai:gpt-4o-mini"],
+      research: ["serper", "gemini:gemini-2.5-flash-lite", "openrouter:google/gemini-2.5-flash-lite"],
+      study_tools: ["gemini:gemini-2.5-flash-lite", "openrouter:google/gemini-2.5-flash-lite"],
+    },
+  };
+
+  return { ...mix, estimate: estimatePlanAiCost(mix) };
+}
+
 const defaultPlans: DefaultPlan[] = [
   {
     slug: "two-weeks",
     name: "Two Weeks",
     description: "Short learning sprint with Orbit AI usage included.",
-    amount: 250000,
+    amount: withOwnerMargin(250000),
     interval: "two_weeks",
     aiTokenLimit: 150000,
-    providerLimits: { openai: 80000, gemini: 50000, fallback: 20000 },
+    providerLimits: aiMix("focused_sprint", {
+      gemini: { model: "gemini-2.5-flash-lite", tokens: 90000, role: "daily chat, planner, study tools" },
+      openai: { model: "gpt-4o-mini", tokens: 45000, role: "higher precision fallback" },
+      openrouter: { model: "openai/gpt-4o-mini", tokens: 15000, role: "routing fallback" },
+    }, 120),
   },
   {
     slug: "monthly",
     name: "Monthly",
     description: "Full monthly access for study planning, research, chat, and AI tools.",
-    amount: 500000,
+    amount: withOwnerMargin(500000),
     interval: "monthly",
     aiTokenLimit: 400000,
-    providerLimits: { openai: 220000, gemini: 130000, fallback: 50000 },
+    providerLimits: aiMix("balanced_monthly", {
+      gemini: { model: "gemini-2.5-flash-lite", tokens: 240000, role: "primary low-latency tutoring and planner generation" },
+      openai: { model: "gpt-4o-mini", tokens: 110000, role: "structured academic explanations" },
+      openrouter: { model: "openai/gpt-4o-mini", tokens: 50000, role: "provider fallback" },
+    }, 350),
+  },
+  {
+    slug: "all-round",
+    name: "All Round",
+    description: "Expanded balanced pool across chat, research, planner, study tools, and fallback routing.",
+    amount: withOwnerMargin(850000),
+    interval: "monthly",
+    aiTokenLimit: 900000,
+    providerLimits: aiMix("all_round", {
+      gemini: { model: "gemini-2.5-flash-lite", tokens: 450000, role: "high-volume learning, study tools, planner" },
+      openai: { model: "gpt-4o-mini", tokens: 300000, role: "premium explanation, code, and research synthesis" },
+      openrouter: { model: "openai/gpt-4o-mini", tokens: 150000, role: "resilient fallback and overflow" },
+    }, 900),
   },
   {
     slug: "yearly",
     name: "Yearly",
     description: "Best value annual access with a larger AI allowance.",
-    amount: 5000000,
+    amount: withOwnerMargin(5000000),
     interval: "yearly",
     aiTokenLimit: 6000000,
-    providerLimits: { openai: 3300000, gemini: 2000000, fallback: 700000 },
+    providerLimits: aiMix("annual_all_round", {
+      gemini: { model: "gemini-2.5-flash-lite", tokens: 3200000, role: "daily high-volume learning" },
+      openai: { model: "gpt-4o-mini", tokens: 1900000, role: "premium academic and code work" },
+      openrouter: { model: "openai/gpt-4o-mini", tokens: 900000, role: "fallback and overflow" },
+    }, 6000),
   },
   {
     slug: "custom",
@@ -99,7 +153,7 @@ async function ensurePlans() {
           currency: "NGN",
           billing_interval: plan.interval,
           ai_token_limit: plan.aiTokenLimit,
-          provider_limits: plan.providerLimits,
+          provider_limits: plan.providerLimits as Prisma.InputJsonValue,
           paystack_plan_code: paystackPlanEnv[plan.slug] || undefined,
           is_custom: Boolean(plan.isCustom),
           is_active: plan.active ?? true,
@@ -112,7 +166,7 @@ async function ensurePlans() {
           currency: "NGN",
           billing_interval: plan.interval,
           ai_token_limit: plan.aiTokenLimit,
-          provider_limits: plan.providerLimits,
+          provider_limits: plan.providerLimits as Prisma.InputJsonValue,
           paystack_plan_code: paystackPlanEnv[plan.slug] || null,
           is_custom: Boolean(plan.isCustom),
           is_active: plan.active ?? true,

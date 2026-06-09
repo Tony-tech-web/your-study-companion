@@ -42,7 +42,7 @@ async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: stri
           "Authorization": `Bearer ${apiKeys.openrouter}`,
         },
         body: JSON.stringify({
-          model: "google/gemini-2.0-flash-001",
+          model: "google/gemini-2.5-flash-lite",
           messages,
           max_tokens: 4000,
         }),
@@ -78,7 +78,7 @@ async function callAI(messages: any[], apiKeys: { openai?: string; gemini?: stri
         parts: [{ text: m.content }]
       }));
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKeys.gemini}`, {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKeys.gemini}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

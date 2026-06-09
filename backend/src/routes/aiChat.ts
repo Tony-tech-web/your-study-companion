@@ -77,7 +77,7 @@ router.post("/chat", authenticate, async (req: AuthRequest, res: Response) => {
 
       else if (provider === "gemini") {
         const resp = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -129,7 +129,7 @@ router.post("/chat", authenticate, async (req: AuthRequest, res: Response) => {
         feature: "ai_chat",
         promptTokens,
         completionTokens,
-        metadata: { model },
+        metadata: { model: provider === "gemini" ? "gemini-2.5-flash-lite" : model },
       });
       res.json({ reply, provider, model: provider, usage });
       return;
@@ -149,7 +149,7 @@ router.get("/models", authenticate, (_req: AuthRequest, res: Response) => {
   const models = [
     { id: "auto", label: "Auto (Best available)", available: true },
     { id: "openai", label: "GPT-4o Mini", available: !!process.env.OPENAI_API_KEY },
-    { id: "gemini", label: "Gemini 2.0 Flash", available: !!process.env.GEMINI_API_KEY },
+    { id: "gemini", label: "Gemini 2.5 Flash-Lite", available: !!process.env.GEMINI_API_KEY },
     { id: "openrouter", label: "OpenRouter", available: !!process.env.OPEN_ROUTER_API_KEY },
   ];
   res.json(models);

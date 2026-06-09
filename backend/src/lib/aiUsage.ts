@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { estimateAiCost } from "./aiPricing";
 import { prisma } from "./prisma";
 
 export const estimateTokens = (value: unknown) => {
@@ -43,7 +44,7 @@ export const getAiUsageSummary = async (userId: string, since?: Date | null) => 
     ...(since ? { created_at: { gte: since } } : {}),
   };
 
-  const [total, byProvider, recent] = await Promise.all([
+  const [total, byProvider, recent, allCostEvents] = await Promise.all([
     prisma.aiUsageEvent.aggregate({
       where,
       _sum: {
@@ -56,7 +57,7 @@ export const getAiUsageSummary = async (userId: string, since?: Date | null) => 
     prisma.aiUsageEvent.groupBy({
       by: ["provider"],
       where,
-      _sum: { total_tokens: true },
+      _sum: { total_tokens: true, prompt_tokens: true, completion_tokens: true },
       _count: true,
     }),
     prisma.aiUsageEvent.findMany({
@@ -64,20 +65,74 @@ export const getAiUsageSummary = async (userId: string, since?: Date | null) => 
       orderBy: { created_at: "desc" },
       take: 10,
     }),
+    prisma.aiUsageEvent.findMany({
+      where,
+      select: {
+        provider: true,
+        prompt_tokens: true,
+        completion_tokens: true,
+        metadata: true,
+      },
+    }),
   ]);
+
+  const recentWithCost = recent.map((event) => {
+    const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata as Record<string, unknown> : {};
+    const cost = estimateAiCost({
+      provider: event.provider,
+      model: metadata.model,
+      promptTokens: event.prompt_tokens,
+      completionTokens: event.completion_tokens,
+      serperQueries: Number(metadata.serper_queries || 0),
+    });
+    return { ...event, cost };
+  });
+
+  const providerCostEntries = allCostEvents.map((event) => {
+    const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata as Record<string, unknown> : {};
+    return estimateAiCost({
+      provider: event.provider,
+      model: metadata.model,
+      promptTokens: event.prompt_tokens,
+      completionTokens: event.completion_tokens,
+      serperQueries: Number(metadata.serper_queries || 0),
+    });
+  });
+  const costSummary = providerCostEntries.reduce(
+    (acc, cost) => {
+      acc.provider_cost_usd += cost.provider_cost_usd;
+      acc.margin_usd += cost.margin_usd;
+      acc.billable_cost_usd += cost.billable_cost_usd;
+      acc.billable_cost_kobo += cost.billable_cost_kobo;
+      return acc;
+    },
+    { provider_cost_usd: 0, margin_usd: 0, billable_cost_usd: 0, billable_cost_kobo: 0 }
+  );
 
   return {
     total_tokens: total._sum.total_tokens || 0,
     prompt_tokens: total._sum.prompt_tokens || 0,
     completion_tokens: total._sum.completion_tokens || 0,
     event_count: total._count,
-    by_provider: byProvider.reduce<Record<string, { tokens: number; events: number }>>((acc, item) => {
+    by_provider: byProvider.reduce<Record<string, { tokens: number; events: number; cost: ReturnType<typeof estimateAiCost> }>>((acc, item) => {
+      const cost = estimateAiCost({
+        provider: item.provider,
+        promptTokens: item._sum.prompt_tokens || 0,
+        completionTokens: item._sum.completion_tokens || 0,
+      });
       acc[item.provider] = {
         tokens: item._sum.total_tokens || 0,
         events: item._count,
+        cost,
       };
       return acc;
     }, {}),
-    recent,
+    cost: {
+      provider_cost_usd: Number(costSummary.provider_cost_usd.toFixed(6)),
+      margin_usd: Number(costSummary.margin_usd.toFixed(6)),
+      billable_cost_usd: Number(costSummary.billable_cost_usd.toFixed(6)),
+      billable_cost_kobo: costSummary.billable_cost_kobo,
+    },
+    recent: recentWithCost,
   };
 };
