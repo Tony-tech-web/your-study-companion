@@ -1,5 +1,5 @@
 import "dotenv/config";
-import express from "express";
+import express, { Request } from "express";
 import cors from "cors";
 import path from "path";
 import swaggerUi from "swagger-ui-express";
@@ -28,6 +28,7 @@ import authRouter from "./routes/auth";
 import aiChatRouter from "./routes/aiChat";
 import researchSearchRouter from "./routes/researchSearch";
 import publicMetricsRouter from "./routes/publicMetrics";
+import billingRouter from "./routes/billing";
 
 
 const app = express();
@@ -51,7 +52,14 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: "2mb" }));
+app.use(
+  express.json({
+    limit: "2mb",
+    verify: (req: Request & { rawBody?: Buffer }, _res, buf) => {
+      req.rawBody = Buffer.from(buf);
+    },
+  })
+);
 
 // ── Health ─────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
@@ -85,6 +93,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/ai", aiChatRouter);
 app.use("/api/research", researchSearchRouter);
 app.use("/api/public", publicMetricsRouter);
+app.use("/api/billing", billingRouter);
 
 
 // ── OpenAPI / Swagger ──────────────────────────────────────

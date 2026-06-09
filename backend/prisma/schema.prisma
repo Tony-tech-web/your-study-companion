@@ -164,6 +164,104 @@ model UserStats {
   @@map("user_stats")
 }
 
+model BillingPlan {
+  id                 String   @id @default(uuid()) @db.Uuid
+  slug               String   @unique
+  name               String
+  description        String?
+  billing_interval   String
+  price_kobo         Int      @default(0)
+  currency           String   @default("NGN")
+  ai_token_limit     Int?
+  provider_limits    Json?
+  paystack_plan_code String?
+  is_active          Boolean  @default(true)
+  is_custom          Boolean  @default(false)
+  sort_order         Int      @default(0)
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  subscriptions Subscription[]
+  payments      Payment[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id                         String    @id @default(uuid()) @db.Uuid
+  user_id                    String    @db.Uuid
+  plan_id                    String    @db.Uuid
+  status                     String    @default("trial")
+  current_period_start       DateTime?
+  current_period_end         DateTime?
+  trial_ends_at              DateTime?
+  paystack_subscription_code String?   @unique
+  paystack_email_token       String?
+  cancel_at_period_end       Boolean   @default(false)
+  created_at                 DateTime  @default(now())
+  updated_at                 DateTime  @updatedAt
+
+  plan     BillingPlan @relation(fields: [plan_id], references: [id])
+  payments Payment[]
+  invoices Invoice[]
+
+  @@index([user_id])
+  @@map("subscriptions")
+}
+
+model Payment {
+  id                      String    @id @default(uuid()) @db.Uuid
+  user_id                 String    @db.Uuid
+  subscription_id         String?   @db.Uuid
+  plan_id                 String?   @db.Uuid
+  status                  String
+  amount_kobo             Int
+  currency                String    @default("NGN")
+  provider                String    @default("paystack")
+  provider_reference      String    @unique
+  provider_transaction_id String?
+  channel                 String?
+  paid_at                 DateTime?
+  raw                     Json?
+  created_at              DateTime  @default(now())
+
+  subscription Subscription? @relation(fields: [subscription_id], references: [id])
+  plan         BillingPlan?  @relation(fields: [plan_id], references: [id])
+
+  @@index([user_id])
+  @@map("payments")
+}
+
+model Invoice {
+  id                    String    @id @default(uuid()) @db.Uuid
+  user_id               String    @db.Uuid
+  subscription_id       String?   @db.Uuid
+  status                String
+  amount_kobo           Int
+  currency              String    @default("NGN")
+  provider_invoice_code String?   @unique
+  due_at                DateTime?
+  paid_at               DateTime?
+  raw                   Json?
+  created_at            DateTime  @default(now())
+
+  subscription Subscription? @relation(fields: [subscription_id], references: [id])
+
+  @@index([user_id])
+  @@map("invoices")
+}
+
+model PaymentEvent {
+  id                String   @id @default(uuid()) @db.Uuid
+  provider          String   @default("paystack")
+  event_type        String
+  provider_event_id String?  @unique
+  raw               Json
+  created_at        DateTime @default(now())
+
+  @@map("payment_events")
+}
+
 // ------------------------------------------------------
 // IGNORED SUPABASE TABLES
 // These tables exist in the database and have policies attached to them.
