@@ -7,13 +7,23 @@ const router = Router();
 type StudyPlanBlock = {
   day: number;
   hour: number;
+  minute?: number;
   subject: string;
   duration: number;
+  durationMinutes?: number;
   color: string;
 };
 
 const PLAN_COLORS = ["#6366f1", "#10b981", "#f27d26", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899"];
-const FOCUS_HOURS = [8, 10, 13, 15, 17, 19];
+const FOCUS_WINDOWS = [
+  { hour: 8, minute: 0 },
+  { hour: 9, minute: 30 },
+  { hour: 11, minute: 0 },
+  { hour: 14, minute: 0 },
+  { hour: 16, minute: 30 },
+  { hour: 19, minute: 0 },
+];
+const DURATION_MINUTES = [45, 60, 75, 90, 120];
 
 const parsePlanPayload = (raw: unknown) => {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, unknown>;
@@ -47,15 +57,39 @@ const normalizeSubjects = (raw: unknown): string[] => {
 const inferActivityProfile = (value: string) => {
   const text = value.toLowerCase();
   if (/\b(code|program|javascript|python|lab|build|debug|project|implementation)\b/.test(text)) {
-    return { mode: "practice", duration: 2 };
+    return { mode: "practice", duration: 2, durationMinutes: 90 };
   }
   if (/\b(read|essay|chapter|history|law|literature|note|summary)\b/.test(text)) {
-    return { mode: "reading", duration: 1 };
+    return { mode: "reading", duration: 1, durationMinutes: 60 };
   }
   if (/\b(exam|test|quiz|revision|past question|drill)\b/.test(text)) {
-    return { mode: "revision", duration: 1 };
+    return { mode: "revision", duration: 1, durationMinutes: 75 };
   }
-  return { mode: "focused-study", duration: 1 };
+  return { mode: "focused-study", duration: 1, durationMinutes: 60 };
+};
+
+const clampInt = (value: unknown, min: number, max: number, fallback: number) => {
+  const next = Number(value);
+  if (!Number.isFinite(next)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(next)));
+};
+
+const normalizeScheduleBlock = (block: unknown, fallbackIndex = 0): StudyPlanBlock | null => {
+  if (!block || typeof block !== "object") return null;
+  const item = block as Record<string, unknown>;
+  const subject = String(item.subject || "").trim();
+  if (!subject) return null;
+  const duration = Math.max(0.25, Number(item.duration) || 1);
+  const durationMinutes = clampInt(item.durationMinutes, 15, 240, Math.round(duration * 60));
+  return {
+    day: clampInt(item.day, 0, 6, fallbackIndex % 7),
+    hour: clampInt(item.hour, 0, 23, 9),
+    minute: clampInt(item.minute, 0, 59, 0),
+    subject,
+    duration: Math.max(0.25, Math.round((durationMinutes / 60) * 4) / 4),
+    durationMinutes,
+    color: typeof item.color === "string" && item.color ? item.color : PLAN_COLORS[fallbackIndex % PLAN_COLORS.length],
+  };
 };
 
 const generateScheduleBlocks = (subjects: string[], totalHours = 0, daysPerWeek = 5): StudyPlanBlock[] => {
@@ -74,14 +108,18 @@ const generateScheduleBlocks = (subjects: string[], totalHours = 0, daysPerWeek 
     let turn = 0;
 
     while (remaining > 0 && assignedHours < weeklyHours + cleanSubjects.length) {
-      const duration = Math.min(profile.duration, remaining);
-      const day = usableDays[(subjectIndex + turn * 2) % usableDays.length];
-      const hour = FOCUS_HOURS[(subjectIndex * 2 + turn) % FOCUS_HOURS.length];
+      const suggestedMinutes = DURATION_MINUTES[(subjectIndex + turn) % DURATION_MINUTES.length];
+      const durationMinutes = Math.min(profile.durationMinutes, suggestedMinutes, Math.max(30, Math.round(remaining * 60)));
+      const duration = Math.max(0.5, Math.round((durationMinutes / 60) * 4) / 4);
+      const day = usableDays[(subjectIndex + turn * 2 + Math.floor(Math.random() * usableDays.length)) % usableDays.length];
+      const window = FOCUS_WINDOWS[(subjectIndex * 2 + turn + Math.floor(Math.random() * FOCUS_WINDOWS.length)) % FOCUS_WINDOWS.length];
       blocks.push({
         day,
-        hour,
+        hour: window.hour,
+        minute: window.minute,
         subject,
         duration,
+        durationMinutes,
         color: PLAN_COLORS[subjectIndex % PLAN_COLORS.length],
       });
       remaining -= duration;
@@ -90,7 +128,7 @@ const generateScheduleBlocks = (subjects: string[], totalHours = 0, daysPerWeek 
     }
   });
 
-  return blocks.sort((a, b) => ((a.day + 6) % 7) - ((b.day + 6) % 7) || a.hour - b.hour);
+  return blocks.sort((a, b) => ((a.day + 6) % 7) - ((b.day + 6) % 7) || a.hour - b.hour || (a.minute || 0) - (b.minute || 0));
 };
 
 const ensureSchedulePayload = (subjectsRaw: unknown, totalHours = 0, daysPerWeek = 5) => {
@@ -98,6 +136,8 @@ const ensureSchedulePayload = (subjectsRaw: unknown, totalHours = 0, daysPerWeek
   const subjects = normalizeSubjects(payload);
   const scheduleBlocks = Array.isArray(payload.scheduleBlocks) && payload.scheduleBlocks.length > 0
     ? payload.scheduleBlocks
+        .map((block, index) => normalizeScheduleBlock(block, index))
+        .filter((block): block is StudyPlanBlock => Boolean(block))
     : generateScheduleBlocks(subjects, totalHours, daysPerWeek);
 
   return {
