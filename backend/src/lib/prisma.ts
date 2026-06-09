@@ -8,8 +8,15 @@ const globalForPrisma = globalThis as unknown as {
 
 function createPrismaClient() {
   const connectionString = process.env.DATABASE_URL!;
+  const isSupabasePooler = connectionString.includes("supabase.com");
+  const poolConnectionString = isSupabasePooler
+    ? connectionString.replace(/[?&]sslmode=[^&]+/, "")
+    : connectionString;
   // Prisma 7 adapter-pg requires a pg.Pool instance
-  const pool = new pg.Pool({ connectionString });
+  const pool = new pg.Pool({
+    connectionString: poolConnectionString,
+    ssl: isSupabasePooler ? { rejectUnauthorized: false } : undefined,
+  });
   const adapter = new PrismaPg(pool);
 
   return new PrismaClient({
