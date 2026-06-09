@@ -29,6 +29,7 @@ import aiChatRouter from "./routes/aiChat";
 import researchSearchRouter from "./routes/researchSearch";
 import publicMetricsRouter from "./routes/publicMetrics";
 import billingRouter from "./routes/billing";
+import accountRouter from "./routes/account";
 
 
 const app = express();
@@ -94,6 +95,7 @@ app.use("/api/ai", aiChatRouter);
 app.use("/api/research", researchSearchRouter);
 app.use("/api/public", publicMetricsRouter);
 app.use("/api/billing", billingRouter);
+app.use("/api/account", accountRouter);
 
 
 // ── OpenAPI / Swagger ──────────────────────────────────────

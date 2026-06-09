@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import { prisma } from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { getAiUsageSummary, recordAiUsage } from "../lib/aiUsage";
 
 type BillingInterval = "two_weeks" | "monthly" | "yearly" | "custom";
 
@@ -260,16 +261,45 @@ router.get("/usage", authenticate, async (req: AuthRequest, res: Response) => {
     }),
     prisma.userStats.findUnique({ where: { user_id: userId } }),
   ]);
+  const usage = await getAiUsageSummary(userId, subscription?.current_period_start || null);
+  const tokenLimit = subscription?.plan?.ai_token_limit || 0;
 
   res.json({
     subscription,
-    ai_token_limit: subscription?.plan?.ai_token_limit || 0,
+    ai_token_limit: tokenLimit,
     provider_limits: subscription?.plan?.provider_limits || null,
-    tokens_used: null,
-    tokens_remaining: null,
-    token_metering_enabled: false,
+    tokens_used: usage.total_tokens,
+    tokens_remaining: tokenLimit > 0 ? Math.max(0, tokenLimit - usage.total_tokens) : null,
+    token_metering_enabled: true,
+    usage,
     total_ai_interactions: stats?.total_ai_interactions || 0,
   });
+});
+
+router.post("/usage-events", authenticate, async (req: AuthRequest, res: Response) => {
+  const {
+    provider = "unknown",
+    feature = "ai",
+    prompt_tokens = 0,
+    completion_tokens = 0,
+    total_tokens,
+    metadata,
+  } = req.body || {};
+
+  const total = Number(total_tokens);
+  const prompt = Number(prompt_tokens);
+  const completion = Number(completion_tokens);
+  const safeTotal = Number.isFinite(total) && total > 0 ? total : 0;
+  const event = await recordAiUsage({
+    userId: req.user_id!,
+    provider: String(provider).slice(0, 60),
+    feature: String(feature).slice(0, 80),
+    promptTokens: Number.isFinite(prompt) && prompt > 0 ? prompt : Math.max(0, Math.floor(safeTotal * 0.65)),
+    completionTokens: Number.isFinite(completion) && completion > 0 ? completion : Math.max(0, Math.ceil(safeTotal * 0.35)),
+    metadata: metadata && typeof metadata === "object" ? metadata : undefined,
+  });
+
+  res.status(201).json({ event });
 });
 
 router.post("/checkout", authenticate, async (req: AuthRequest, res: Response) => {

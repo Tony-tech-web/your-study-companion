@@ -1,5 +1,7 @@
 import { Router, Response } from "express";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { estimateTokens, getAiUsageSummary, recordAiUsage } from "../lib/aiUsage";
+import { prisma } from "../lib/prisma";
 
 const router = Router();
 
@@ -7,6 +9,22 @@ const router = Router();
 router.post("/chat", authenticate, async (req: AuthRequest, res: Response) => {
   const { message, history = [], model = "auto" } = req.body;
   if (!message) { res.status(400).json({ error: "message is required" }); return; }
+
+  const subscription = await prisma.subscription.findFirst({
+    where: { user_id: req.user_id!, status: { in: ["trial", "active", "past_due"] } },
+    include: { plan: true },
+    orderBy: { updated_at: "desc" },
+  });
+  if (subscription?.plan?.ai_token_limit) {
+    const usage = await getAiUsageSummary(req.user_id!, subscription.current_period_start || null);
+    if (usage.total_tokens >= subscription.plan.ai_token_limit) {
+      res.status(402).json({
+        error: "AI token allowance exhausted",
+        reply: "Your current Orbit AI allowance has been used. Upgrade or renew your plan to continue.",
+      });
+      return;
+    }
+  }
 
   const systemPrompt = "You are Orbit, a professional academic AI assistant. Be concise, precise, and helpful. Never include model metadata tags. Format responses with clear structure.";
 
@@ -33,6 +51,8 @@ router.post("/chat", authenticate, async (req: AuthRequest, res: Response) => {
   for (const provider of providers) {
     try {
       let reply = "";
+      let promptTokens = estimateTokens([systemPrompt, ...history.slice(-10), message]);
+      let completionTokens = 0;
 
       if (provider === "openai") {
         const resp = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -51,6 +71,8 @@ router.post("/chat", authenticate, async (req: AuthRequest, res: Response) => {
         const data: any = await resp.json();
         if (!resp.ok) throw new Error(data.error?.message || "OpenAI error");
         reply = data.choices[0].message.content;
+        promptTokens = data.usage?.prompt_tokens || promptTokens;
+        completionTokens = data.usage?.completion_tokens || estimateTokens(reply);
       }
 
       else if (provider === "gemini") {
@@ -71,6 +93,8 @@ router.post("/chat", authenticate, async (req: AuthRequest, res: Response) => {
         const data: any = await resp.json();
         if (!resp.ok) throw new Error(data.error?.message || "Gemini error");
         reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        promptTokens = data.usageMetadata?.promptTokenCount || promptTokens;
+        completionTokens = data.usageMetadata?.candidatesTokenCount || estimateTokens(reply);
       }
 
       else if (provider === "openrouter") {
@@ -94,10 +118,20 @@ router.post("/chat", authenticate, async (req: AuthRequest, res: Response) => {
         const data: any = await resp.json();
         if (!resp.ok) throw new Error(data.error?.message || "OpenRouter error");
         reply = data.choices[0].message.content;
+        promptTokens = data.usage?.prompt_tokens || promptTokens;
+        completionTokens = data.usage?.completion_tokens || estimateTokens(reply);
       }
 
       reply = reply.replace(/\{\{[^}]+\}\}/g, "").trim();
-      res.json({ reply, provider, model: provider });
+      const usage = await recordAiUsage({
+        userId: req.user_id!,
+        provider,
+        feature: "ai_chat",
+        promptTokens,
+        completionTokens,
+        metadata: { model },
+      });
+      res.json({ reply, provider, model: provider, usage });
       return;
 
     } catch (err) {

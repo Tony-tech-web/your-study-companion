@@ -22,6 +22,8 @@ model Profile {
   avatar_url     String?
   student_id     String    @unique
   field_of_study String?
+  account_status String    @default("active")
+  deactivated_at DateTime?
   created_at     DateTime  @default(now())
   updated_at     DateTime  @updatedAt
 
@@ -260,6 +262,21 @@ model PaymentEvent {
   created_at        DateTime @default(now())
 
   @@map("payment_events")
+}
+
+model AiUsageEvent {
+  id                String   @id @default(uuid()) @db.Uuid
+  user_id           String   @db.Uuid
+  provider          String
+  feature           String
+  prompt_tokens     Int      @default(0)
+  completion_tokens Int      @default(0)
+  total_tokens      Int      @default(0)
+  metadata          Json?
+  created_at        DateTime @default(now())
+
+  @@index([user_id, created_at])
+  @@map("ai_usage_events")
 }
 
 // ------------------------------------------------------
