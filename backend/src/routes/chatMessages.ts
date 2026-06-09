@@ -8,7 +8,13 @@ const router = Router();
 router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const messages = await prisma.chatMessage.findMany({
-      where: { sender_id: req.user_id },
+      where: {
+        OR: [
+          { receiver_id: null },
+          { sender_id: req.user_id },
+          { receiver_id: req.user_id },
+        ],
+      },
       orderBy: { created_at: "asc" },
     });
     res.json(messages);

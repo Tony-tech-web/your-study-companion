@@ -3,6 +3,34 @@ import { prisma } from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
 
 const router = Router();
+const streamClients = new Set<Response>();
+
+const sendNewsEvent = (event: string, data: unknown) => {
+  const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  streamClients.forEach((client) => client.write(frame));
+};
+
+// GET /api/news/stream
+router.get("/stream", async (_req, res: Response) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.write(`event: connected\ndata: ${JSON.stringify({ ok: true, at: new Date().toISOString() })}\n\n`);
+  streamClients.add(res);
+
+  const heartbeat = setInterval(() => {
+    res.write(`event: heartbeat\ndata: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
+  }, 25000);
+
+  res.on("close", () => {
+    clearInterval(heartbeat);
+    streamClients.delete(res);
+    res.end();
+  });
+});
 
 // GET /api/news
 router.get("/", async (_req, res: Response) => {
@@ -29,6 +57,7 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
     const article = await prisma.schoolNews.create({
       data: { title, content, category },
     });
+    sendNewsEvent("news.created", article);
     res.status(201).json(article);
   } catch (err) {
     console.error("[schoolNews]", err);
