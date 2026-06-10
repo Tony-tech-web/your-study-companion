@@ -1,6 +1,6 @@
 import { Router, Response } from "express";
 import { prisma } from "../lib/prisma";
-import { authenticate, AuthRequest } from "../middleware/auth";
+import { requireAdmin, AdminRequest } from "../middleware/adminAuth";
 
 const router = Router();
 const streamClients = new Set<Response>();
@@ -47,7 +47,7 @@ router.get("/", async (_req, res: Response) => {
 });
 
 // POST /api/news (admin only — no user ownership check)
-router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
+router.post("/", requireAdmin, async (req: AdminRequest, res: Response) => {
   try {
     const { title, content, category } = req.body;
     if (!title || !content) {
