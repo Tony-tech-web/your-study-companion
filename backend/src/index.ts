@@ -31,6 +31,8 @@ import publicMetricsRouter from "./routes/publicMetrics";
 import billingRouter from "./routes/billing";
 import accountRouter from "./routes/account";
 import adminRouter from "./routes/admin";
+import notificationsRouter from "./routes/notifications";
+import maintenanceRouter from "./routes/maintenance";
 
 
 const app = express();
@@ -98,6 +100,8 @@ app.use("/api/public", publicMetricsRouter);
 app.use("/api/billing", billingRouter);
 app.use("/api/account", accountRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/notifications", notificationsRouter);
+app.use("/api/maintenance", maintenanceRouter);
 
 
 // ── OpenAPI / Swagger ──────────────────────────────────────

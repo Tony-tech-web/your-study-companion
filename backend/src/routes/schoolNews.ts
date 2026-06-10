@@ -65,4 +65,36 @@ router.post("/", requireAdmin, async (req: AdminRequest, res: Response) => {
   }
 });
 
+// PUT /api/news/:id (admin only)
+router.put("/:id", requireAdmin, async (req: AdminRequest, res: Response) => {
+  try {
+    const { title, content, category } = req.body;
+    const article = await prisma.schoolNews.update({
+      where: { id: req.params.id },
+      data: {
+        ...(title !== undefined ? { title: String(title) } : {}),
+        ...(content !== undefined ? { content: String(content) } : {}),
+        ...(category !== undefined ? { category: String(category) } : {}),
+      },
+    });
+    sendNewsEvent("news.updated", article);
+    res.json(article);
+  } catch (err) {
+    console.error("[schoolNews]", err);
+    res.status(500).json({ error: "Failed to update news article" });
+  }
+});
+
+// DELETE /api/news/:id (admin only)
+router.delete("/:id", requireAdmin, async (req: AdminRequest, res: Response) => {
+  try {
+    await prisma.schoolNews.delete({ where: { id: req.params.id } });
+    sendNewsEvent("news.deleted", { id: req.params.id });
+    res.status(204).send();
+  } catch (err) {
+    console.error("[schoolNews]", err);
+    res.status(500).json({ error: "Failed to delete news article" });
+  }
+});
+
 export default router;
